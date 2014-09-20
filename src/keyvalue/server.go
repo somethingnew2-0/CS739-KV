@@ -1,10 +1,16 @@
 package keyvalue
 
 import (
+	"github.com/eapache/channels"
+
+	"bufio"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const MaxUInt16 uint = uint(^uint16(0))
@@ -19,7 +25,7 @@ type Server struct {
 	Port     uint16
 	Store    map[string]string
 	Write    chan Write
-	Log      chan Write
+	Log      *channels.InfiniteChannel
 	DeltaLog *os.File
 	BaseLog  *os.File
 }
@@ -43,15 +49,16 @@ func Init(host string) (int, *Server) {
 	}
 
 	server := &Server{
-		Host:     split[0],
-		Port:     uint16(port),
-		Store:    make(map[string]string),
-		Write:    make(chan Write, 64),
-		DeltaLog: nil,
-		BaseLog:  nil,
+		Host:    split[0],
+		Port:    uint16(port),
+		Store:   make(map[string]string),
+		Write:   make(chan Write, 64),
+		Log:     channels.NewInfiniteChannel(),
+		BaseLog: nil,
 	}
 
 	go server.write()
+	go server.log()
 
 	return 0, server
 }
@@ -59,6 +66,48 @@ func Init(host string) (int, *Server) {
 func (s *Server) write() {
 	for write := range s.Write {
 		s.Store[write.Key] = s.Store[write.Value]
+		s.Log.In() <- write
+	}
+}
+
+func (s *Server) log() {
+	ticker := time.NewTicker(time.Millisecond * 1000)
+	buffer := make([]Write, 1024)
+	for t := range ticker.C {
+		func(s *Server) {
+			deltaPath := fmt.Sprintf("/tmp/delta-%d", t.UnixNano())
+			f, err := os.Create(deltaPath)
+			if err != nil {
+				log.Printf("Could not create file %s, failed with error '%v'\n", deltaPath, err)
+				return
+			}
+			defer f.Close()
+
+			w := bufio.NewWriter(f)
+			defer w.Flush()
+
+			length := s.Log.Len()
+			bufferIndex := 0
+			for i := 0; i < length; i++ {
+				buffer[bufferIndex] = (<-s.Log.Out()).(Write)
+				if bufferIndex > cap(buffer) {
+					data, err := json.Marshal(buffer)
+					if err != nil {
+						log.Printf("Could not marshall delta log, with error '%v'\n", err)
+					}
+					w.Write(data)
+					if err != nil {
+						log.Printf("Could not write data failed, with error '%v'\n", err)
+					}
+					w.WriteString("\n")
+					if err != nil {
+						log.Printf("Could not write newline, failed with error '%v'\n", err)
+					}
+					bufferIndex = 0
+				}
+				bufferIndex++
+			}
+		}(s)
 	}
 }
 

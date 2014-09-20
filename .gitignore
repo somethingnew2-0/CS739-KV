@@ -6,6 +6,7 @@
 # Folders
 _obj
 _test
+bin
 src/github.com
 src/code.google.com
 

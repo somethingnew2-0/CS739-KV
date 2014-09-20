@@ -3,8 +3,6 @@ package main
 import (
 	"keyvalue"
 
-	"github.com/chai2010/protorpc"
-
 	"fmt"
 )
 
