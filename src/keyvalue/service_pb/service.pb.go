@@ -46,7 +46,7 @@ func (m *GetRequest) GetKey() string {
 }
 
 type SetRequest struct {
-	Key              *int32  `protobuf:"varint,1,req,name=key" json:"key,omitempty"`
+	Key              *string `protobuf:"bytes,1,req,name=key" json:"key,omitempty"`
 	Value            *string `protobuf:"bytes,2,req,name=value" json:"value,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
@@ -55,11 +55,11 @@ func (m *SetRequest) Reset()         { *m = SetRequest{} }
 func (m *SetRequest) String() string { return proto.CompactTextString(m) }
 func (*SetRequest) ProtoMessage()    {}
 
-func (m *SetRequest) GetKey() int32 {
+func (m *SetRequest) GetKey() string {
 	if m != nil && m.Key != nil {
 		return *m.Key
 	}
-	return 0
+	return ""
 }
 
 func (m *SetRequest) GetValue() string {

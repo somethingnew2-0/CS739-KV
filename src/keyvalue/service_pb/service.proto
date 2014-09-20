@@ -8,7 +8,7 @@ message GetRequest {
 }
 
 message SetRequest {
-	required int32 key = 1;
+	required string key = 1;
 	required string value = 2;
 }
 
