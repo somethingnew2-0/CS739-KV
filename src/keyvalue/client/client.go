@@ -1,36 +1,37 @@
 package client
 
 import (
-	"errors"
+	"keyvalue/kvservice"
+
+	"fmt"
+	"log"
 
 	"code.google.com/p/goprotobuf/proto"
-
-	"./service_pb"
 )
 
-func clientTest() {
+func ClientTest() {
 	stub, client, err := kvservice.DialKVService("tcp", "localhost:12345")
 	if err != nil {
 		log.Fatal(`kvservice.DialKVService("tcp", "localhost:12345"):`, err)
 	}
 	defer client.Close()
 
-	var getArg GetRequest
-	var setArg SetRequest
-	var reply Response
+	getArg := new(kvservice.GetRequest)
+	setArg := new(kvservice.SetRequest)
+	reply := new(kvservice.Response)
 
-	setArg.key = proto.string("key1")
-	setArg.value = proto.string("value1")
+	setArg.Key = proto.String("key1")
+	setArg.Value = proto.String("value1")
 
-	if err = stub.Set(&setArg, &reply); err != nil {
+	if err = stub.Set(setArg, reply); err != nil {
 		log.Fatal("kvservice error:", err)
 	}
 
 	fmt.Printf("Called Set(key=%s, value=%s) Received(result=%d, value=%s)", setArg.GetKey(), setArg.GetValue(), reply.GetResult(), reply.GetValue())
 
-	getArg.key = proto.string("key1")
+	getArg.Key = proto.String("key1")
 
-	if err = stub.Get(&getArg, &reply); err != nil {
+	if err = stub.Get(getArg, reply); err != nil {
 		log.Fatal("kvservice error:", err)
 	}
 

@@ -97,8 +97,8 @@ func init() {
 }
 
 type KVService interface {
-	Set(in *GetRequest, out *Response) error
-	Get(in *SetRequest, out *Response) error
+	Set(in *SetRequest, out *Response) error
+	Get(in *GetRequest, out *Response) error
 }
 
 // AcceptKVServiceClient accepts connections on the listener and serves requests
@@ -170,10 +170,10 @@ func NewKVServiceClient(conn io.ReadWriteCloser) (*KVServiceClient, *rpc.Client)
 	return &KVServiceClient{c}, c
 }
 
-func (c *KVServiceClient) Set(in *GetRequest, out *Response) error {
+func (c *KVServiceClient) Set(in *SetRequest, out *Response) error {
 	return c.Call("KVService.Set", in, out)
 }
-func (c *KVServiceClient) Get(in *SetRequest, out *Response) error {
+func (c *KVServiceClient) Get(in *GetRequest, out *Response) error {
 	return c.Call("KVService.Get", in, out)
 }
 
