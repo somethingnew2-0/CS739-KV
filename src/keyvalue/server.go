@@ -24,10 +24,10 @@ type Server struct {
 	BaseLog  *os.File
 }
 
-func Init(server string) (int, *Server) {
-	split := strings.Split(server, ":")
+func Init(host string) (int, *Server) {
+	split := strings.Split(host, ":")
 	if len(split) != 2 {
-		log.Printf("Server given '%s' must be in format 'host:port'\n", server)
+		log.Printf("Server given '%s' must be in format 'host:port'\n", host)
 		return -1, nil
 	}
 
@@ -42,21 +42,48 @@ func Init(server string) (int, *Server) {
 		return -1, nil
 	}
 
-	return 0, &Server{
+	server := &Server{
 		Host:     split[0],
 		Port:     uint16(port),
 		Store:    make(map[string]string),
 		Write:    make(chan Write, 64),
-		Log:      make(chan Write, 64),
 		DeltaLog: nil,
 		BaseLog:  nil,
+	}
+
+	go server.write()
+
+	return 0, server
+}
+
+func (s *Server) write() {
+	for write := range s.Write {
+		s.Store[write.Key] = s.Store[write.Value]
 	}
 }
 
 func (s *Server) Get(key string) (int, string) {
-	return 0, ""
+	if s.Store == nil {
+		log.Printf("Server Store is not initialized\n")
+		return -1, ""
+	}
+
+	value, present := s.Store[key]
+	if present {
+		return 0, value
+	}
+	return 1, ""
 }
 
 func (s *Server) Set(key string, value string) (int, string) {
-	return 0, ""
+	status, oldValue := s.Get(key)
+
+	if s.Write == nil {
+		log.Printf("Server Write channel is not initialized\n")
+		return -1, ""
+	}
+
+	s.Write <- Write{Key: key, Value: value}
+
+	return status, oldValue
 }
