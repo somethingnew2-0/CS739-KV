@@ -4,20 +4,23 @@ package kvservice;
 option cc_generic_services = true;
 
 message GetRequest {
-	required string key = 1;
+  required string id = 1;
+  required string key = 2;
 }
 
 message SetRequest {
-	required string key = 1;
-	required string value = 2;
+  required string id = 1;
+  required string key = 2;
+  required string value = 3;
 }
 
 message Response {
-	required int32 result = 1;
-	optional string value = 2;
+  required string id = 1;
+  required int32 result = 2;
+  optional string value = 3;
 }
 
 service KVService {
-	rpc set (SetRequest) returns (Response);
-	rpc get (GetRequest) returns (Response);
+  rpc set (SetRequest) returns (Response);
+  rpc get (GetRequest) returns (Response);
 }

@@ -30,13 +30,21 @@ var _ = proto.Marshal
 var _ = math.Inf
 
 type GetRequest struct {
-	Key              *string `protobuf:"bytes,1,req,name=key" json:"key,omitempty"`
+	Id               *string `protobuf:"bytes,1,req,name=id" json:"id,omitempty"`
+	Key              *string `protobuf:"bytes,2,req,name=key" json:"key,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
 func (m *GetRequest) Reset()         { *m = GetRequest{} }
 func (m *GetRequest) String() string { return proto.CompactTextString(m) }
 func (*GetRequest) ProtoMessage()    {}
+
+func (m *GetRequest) GetId() string {
+	if m != nil && m.Id != nil {
+		return *m.Id
+	}
+	return ""
+}
 
 func (m *GetRequest) GetKey() string {
 	if m != nil && m.Key != nil {
@@ -46,14 +54,22 @@ func (m *GetRequest) GetKey() string {
 }
 
 type SetRequest struct {
-	Key              *string `protobuf:"bytes,1,req,name=key" json:"key,omitempty"`
-	Value            *string `protobuf:"bytes,2,req,name=value" json:"value,omitempty"`
+	Id               *string `protobuf:"bytes,1,req,name=id" json:"id,omitempty"`
+	Key              *string `protobuf:"bytes,2,req,name=key" json:"key,omitempty"`
+	Value            *string `protobuf:"bytes,3,req,name=value" json:"value,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
 func (m *SetRequest) Reset()         { *m = SetRequest{} }
 func (m *SetRequest) String() string { return proto.CompactTextString(m) }
 func (*SetRequest) ProtoMessage()    {}
+
+func (m *SetRequest) GetId() string {
+	if m != nil && m.Id != nil {
+		return *m.Id
+	}
+	return ""
+}
 
 func (m *SetRequest) GetKey() string {
 	if m != nil && m.Key != nil {
@@ -70,14 +86,22 @@ func (m *SetRequest) GetValue() string {
 }
 
 type Response struct {
-	Result           *int32  `protobuf:"varint,1,req,name=result" json:"result,omitempty"`
-	Value            *string `protobuf:"bytes,2,opt,name=value" json:"value,omitempty"`
+	Id               *string `protobuf:"bytes,1,req,name=id" json:"id,omitempty"`
+	Result           *int32  `protobuf:"varint,2,req,name=result" json:"result,omitempty"`
+	Value            *string `protobuf:"bytes,3,opt,name=value" json:"value,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
 func (m *Response) Reset()         { *m = Response{} }
 func (m *Response) String() string { return proto.CompactTextString(m) }
 func (*Response) ProtoMessage()    {}
+
+func (m *Response) GetId() string {
+	if m != nil && m.Id != nil {
+		return *m.Id
+	}
+	return ""
+}
 
 func (m *Response) GetResult() int32 {
 	if m != nil && m.Result != nil {
