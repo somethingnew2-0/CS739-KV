@@ -1,7 +1,7 @@
 package server
 
 import (
-	"keyvalue/kvservice"
+	"keyvalue/protobuf"
 
 	"code.google.com/p/goprotobuf/proto"
 )

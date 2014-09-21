@@ -1,7 +1,7 @@
 package server
 
 import (
-	"keyvalue/kvservice"
+	"keyvalue/protobuf"
 
 	"github.com/eapache/channels"
 

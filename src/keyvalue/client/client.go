@@ -1,7 +1,7 @@
 package client
 
 import (
-	"keyvalue/kvservice"
+	"keyvalue/protobuf"
 
 	"fmt"
 	"log"

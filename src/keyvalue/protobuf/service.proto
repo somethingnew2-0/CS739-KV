@@ -1,4 +1,4 @@
-package kvservice;
+package protobuf;
 
 // go use cc_generic_services option
 option cc_generic_services = true;
@@ -18,9 +18,4 @@ message Response {
   required string id = 1;
   required int32 result = 2;
   optional string value = 3;
-}
-
-service KVService {
-  rpc set (SetRequest) returns (Response);
-  rpc get (GetRequest) returns (Response);
 }
