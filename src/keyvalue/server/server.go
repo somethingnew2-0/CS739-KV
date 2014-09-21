@@ -23,13 +23,11 @@ type Write struct {
 }
 
 type Server struct {
-	Host     string
-	Port     uint16
-	Store    map[string]string
-	Write    chan Write
-	Log      *channels.InfiniteChannel
-	DeltaLog *os.File
-	BaseLog  *os.File
+	Host  string
+	Port  uint16
+	Store map[string]string
+	Write chan Write
+	Log   *channels.InfiniteChannel
 }
 
 func Init(host string) (int, *Server) {
@@ -51,12 +49,11 @@ func Init(host string) (int, *Server) {
 	}
 
 	server := &Server{
-		Host:    split[0],
-		Port:    uint16(port),
-		Store:   make(map[string]string),
-		Write:   make(chan Write, 64),
-		Log:     channels.NewInfiniteChannel(),
-		BaseLog: nil,
+		Host:  split[0],
+		Port:  uint16(port),
+		Store: make(map[string]string),
+		Write: make(chan Write, 64),
+		Log:   channels.NewInfiniteChannel(),
 	}
 
 	go server.write()
@@ -78,6 +75,11 @@ func (s *Server) log() {
 	buffer := make([]Write, 1024)
 	for t := range ticker.C {
 		func(s *Server) {
+			length := s.Log.Len()
+			if length == 0 {
+				return
+			}
+
 			deltaPath := fmt.Sprintf("/tmp/delta-%d", t.UnixNano())
 			f, err := os.Create(deltaPath)
 			if err != nil {
@@ -89,7 +91,6 @@ func (s *Server) log() {
 			w := bufio.NewWriter(f)
 			defer w.Flush()
 
-			length := s.Log.Len()
 			bufferIndex := 0
 			for i := 0; i < length; i++ {
 				buffer[bufferIndex] = (<-s.Log.Out()).(Write)
