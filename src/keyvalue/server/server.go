@@ -3,19 +3,17 @@ package server
 import (
 	"keyvalue/protobuf"
 
+	"code.google.com/p/goprotobuf/proto"
 	"github.com/eapache/channels"
 
 	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 )
-
-const MaxUInt16 uint = uint(^uint16(0))
 
 type Write struct {
 	Key   string
@@ -23,44 +21,73 @@ type Write struct {
 }
 
 type Server struct {
-	Host  string
-	Port  uint16
-	Store map[string]string
-	Write chan Write
-	Log   *channels.InfiniteChannel
+	Port     uint16
+	Store    map[string]string
+	Listener net.Listener
+	Write    chan Write
+	Log      *channels.InfiniteChannel
 }
 
-func Init(host string) (int, *Server) {
-	split := strings.Split(host, ":")
-	if len(split) != 2 {
-		log.Printf("Server given '%s' must be in format 'host:port'\n", host)
-		return -1, nil
-	}
-
-	port, err := strconv.Atoi(split[1])
+func Init(port uint16) (int, *Server) {
+	//Listen to the TCP port
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%u", port))
 	if err != nil {
-		log.Printf("Port given '%s' is not a number\n", split[1])
-		return -1, nil
-	}
-
-	if uint(port) > MaxUInt16 {
-		log.Printf("Port given '%u' is too large\n", split[1])
+		log.Printf("Port %u could not be opened '%v'\n", port, err)
 		return -1, nil
 	}
 
 	server := &Server{
-		Host:  split[0],
-		Port:  uint16(port),
-		Store: make(map[string]string),
-		Write: make(chan Write, 64),
-		Log:   channels.NewInfiniteChannel(),
+		Port:     port,
+		Store:    make(map[string]string),
+		Listener: listener,
+		Write:    make(chan Write, 64),
+		Log:      channels.NewInfiniteChannel(),
 	}
 
+	go server.run()
 	go server.write()
 	go server.log()
-	go server.run()
 
 	return 0, server
+}
+
+func (s *Server) run() {
+	for {
+		if conn, err := s.Listener.Accept(); err == nil {
+			go func(s *Server, conn net.Conn) {
+				log.Println("Connection established")
+				//Close the connection when the function exits
+				defer conn.Close()
+				//Create a data buffer of type byte slice with capacity of 4096
+				data := make([]byte, 4096)
+				//Read the data waiting on the connection and put it in the data buffer
+				n, err := conn.Read(data)
+				if err != nil {
+					log.Println(err)
+				}
+				log.Println("Decoding Protobuf message")
+				//Create an struct pointer of type protobuf.Request and protobuf.Response struct
+				request := new(protobuf.Request)
+				response := new(protobuf.Response)
+				//Convert all the data retrieved into the ProtobufTest.TestMessage struct type
+				err = proto.Unmarshal(data[0:n], request)
+				if err != nil {
+					log.Println(err)
+				}
+				if request.Value != nil {
+					result, value := s.Get(*request.Key)
+					response.Result = proto.Int32(int32(result))
+					response.Value = proto.String(value)
+				} else {
+					result, value := s.Set(*request.Key, *request.Value)
+					response.Result = proto.Int32(int32(result))
+					response.Value = proto.String(value)
+				}
+			}(s, conn)
+		} else {
+			continue
+		}
+	}
 }
 
 func (s *Server) write() {
@@ -113,10 +140,6 @@ func (s *Server) log() {
 			}
 		}(s)
 	}
-}
-
-func (s *Server) run() {
-	kvservice.ListenAndServeKVService("tcp", fmt.Sprintf(":%d", s.Port), &KVService{Server: s})
 }
 
 func (s *Server) Get(key string) (int, string) {

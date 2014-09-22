@@ -3,15 +3,10 @@ package protobuf;
 // go use cc_generic_services option
 option cc_generic_services = true;
 
-message GetRequest {
+message Request {
   required string id = 1;
   required string key = 2;
-}
-
-message SetRequest {
-  required string id = 1;
-  required string key = 2;
-  required string value = 3;
+  optional string value = 3;
 }
 
 message Response {
