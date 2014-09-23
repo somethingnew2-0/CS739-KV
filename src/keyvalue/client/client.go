@@ -65,7 +65,6 @@ func Init(server string) (int, *Client) {
 
 func (c *Client) run() {
 	for {
-		// try to read the data
 		data := make([]byte, 4)
 		_, err := c.Conn.Read(data)
 		if err != nil {

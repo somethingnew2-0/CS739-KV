@@ -7,6 +7,7 @@ import (
 	"github.com/eapache/channels"
 
 	"bufio"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -56,32 +57,37 @@ func (s *Server) run() {
 		if conn, err := s.Listener.Accept(); err == nil {
 			go func(s *Server, conn net.Conn) {
 				log.Println("Connection established")
-				//Close the connection when the function exits
-				defer conn.Close()
-				//Create a data buffer of type byte slice with capacity of 4096
-				data := make([]byte, 4096)
-				//Read the data waiting on the connection and put it in the data buffer
-				n, err := conn.Read(data)
-				if err != nil {
-					log.Println(err)
-				}
-				log.Println("Decoding Protobuf message")
-				//Create an struct pointer of type protobuf.Request and protobuf.Response struct
-				request := new(protobuf.Request)
-				response := new(protobuf.Response)
-				//Convert all the data retrieved into the ProtobufTest.TestMessage struct type
-				err = proto.Unmarshal(data[0:n], request)
-				if err != nil {
-					log.Println(err)
-				}
-				if request.Value != nil {
-					result, value := s.Get(*request.Key)
-					response.Result = proto.Int32(int32(result))
-					response.Value = proto.String(value)
-				} else {
-					result, value := s.Set(*request.Key, *request.Value)
-					response.Result = proto.Int32(int32(result))
-					response.Value = proto.String(value)
+				for {
+					data := make([]byte, 4)
+					_, err := conn.Read(data)
+					if err != nil {
+						log.Printf("Error reading length: %v", err)
+					}
+					length, _ := binary.Varint(data)
+					data = make([]byte, length)
+					//Read the data waiting on the connection and put it in the data buffer
+					_, err = conn.Read(data)
+					if err != nil {
+						log.Printf("Error reading request: %v", err)
+					}
+					log.Println("Decoding Protobuf message")
+					//Create an struct pointer of type protobuf.Request and protobuf.Response struct
+					request := new(protobuf.Request)
+					response := new(protobuf.Response)
+					//Convert all the data retrieved into the ProtobufTest.TestMessage struct type
+					err = proto.Unmarshal(data[:], request)
+					if err != nil {
+						log.Println(err)
+					}
+					if request.Value != nil {
+						result, value := s.Get(*request.Key)
+						response.Result = proto.Int32(int32(result))
+						response.Value = proto.String(value)
+					} else {
+						result, value := s.Set(*request.Key, *request.Value)
+						response.Result = proto.Int32(int32(result))
+						response.Value = proto.String(value)
+					}
 				}
 			}(s, conn)
 		} else {
