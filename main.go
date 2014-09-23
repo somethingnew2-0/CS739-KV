@@ -8,25 +8,15 @@ import (
 )
 
 func main() {
-	fmt.Printf("Hello, world.\n")
-	_, server := server.Init("localhost:12345")
-	fmt.Printf("Found server %s on port %d\n", server.Host, server.Port)
+	server.Init(12345)
+	_, client := client.Init("localhost:12345")
 
-	setArg.Key = proto.String("key1")
-	setArg.Value = proto.String("value1")
+	result, old := client.Set("key1", "value1")
 
-	if err = stub.Set(setArg, reply); err != nil {
-		log.Fatal("kvservice error:", err)
-	}
+	fmt.Printf("Called Set(key=%s, value=%s) Received(result=%d, value=%s)", "key1", "value1", result, old)
 
-	fmt.Printf("Called Set(key=%s, value=%s) Received(result=%d, value=%s)", setArg.GetKey(), setArg.GetValue(), reply.GetResult(), reply.GetValue())
+	result, value := client.Get("key1")
 
-	getArg.Key = proto.String("key1")
-
-	if err = stub.Get(getArg, reply); err != nil {
-		log.Fatal("kvservice error:", err)
-	}
-
-	fmt.Printf("Called Get(key=%s) Received(result=%d, value=%s)", getArg.GetKey(), reply.GetResult(), reply.GetValue())
+	fmt.Printf("Called Get(key=%s) Received(result=%d, value=%s)", "key1", result, value)
 
 }
