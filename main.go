@@ -4,7 +4,7 @@ import (
 	"keyvalue/client"
 	"keyvalue/server"
 
-	"fmt"
+	"log"
 )
 
 func main() {
@@ -13,10 +13,10 @@ func main() {
 
 	result, old := client.Set("key1", "value1")
 
-	fmt.Printf("Called Set(key=%s, value=%s) Received(result=%d, value=%s)\n", "key1", "value1", result, old)
+	log.Printf("Called Set(key=%s, value=%s) Received(result=%d, value=%s)\n", "key1", "value1", result, old)
 
 	result, value := client.Get("key1")
 
-	fmt.Printf("Called Get(key=%s) Received(result=%d, value=%s)\n", "key1", result, value)
+	log.Printf("Called Get(key=%s) Received(result=%d, value=%s)\n", "key1", result, value)
 
 }

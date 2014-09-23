@@ -86,11 +86,11 @@ func (s *Server) run() {
 					response := new(protobuf.Response)
 					response.Id = request.Id
 					if request.GetValue() == "" {
-						result, value := s.Get(*request.Key)
+						result, value := s.Get(request.GetKey())
 						response.Result = proto.Int32(int32(result))
 						response.Value = proto.String(value)
 					} else {
-						result, value := s.Set(*request.Key, *request.Value)
+						result, value := s.Set(request.GetKey(), request.GetValue())
 						response.Result = proto.Int32(int32(result))
 						response.Value = proto.String(value)
 					}
@@ -121,7 +121,7 @@ func (s *Server) run() {
 
 func (s *Server) write() {
 	for write := range s.Write {
-		s.Store[write.Key] = s.Store[write.Value]
+		s.Store[write.Key] = write.Value
 		s.Log.In() <- write
 	}
 }
