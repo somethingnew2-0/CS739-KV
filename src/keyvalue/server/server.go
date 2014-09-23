@@ -31,7 +31,7 @@ type Server struct {
 
 func Init(port uint16) (int, *Server) {
 	//Listen to the TCP port
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%u", port))
+	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
 	if err != nil {
 		log.Printf("Port %u could not be opened: %v\n", port, err)
 		return -1, nil
@@ -63,21 +63,30 @@ func (s *Server) run() {
 					if err != nil {
 						log.Printf("Error reading length: %v", err)
 					}
-					length, _ := binary.Varint(data)
+					log.Println(data)
+					length64, _ := binary.Uvarint(data)
+					length := int(length64)
+
 					data = make([]byte, length)
-					//Read the data waiting on the connection and put it in the data buffer
-					_, err = conn.Read(data)
-					if err != nil {
-						log.Printf("Error reading request: %v", err)
+					for i := 0; i < length; {
+						//Read the data waiting on the connection and put it in the data buffer
+						n, err := conn.Read(data[i : length-i])
+						i += n
+						if err != nil {
+							log.Printf("Error reading request: %v", err)
+							break
+						}
+						log.Printf("Read %d from connection, needed length %d\n", n, length)
 					}
 					log.Println("Decoding Protobuf message")
 					//Create an struct pointer of type protobuf.Request and protobuf.Response struct
 					request := new(protobuf.Request)
 					response := new(protobuf.Response)
 					//Convert all the data retrieved into the ProtobufTest.TestMessage struct type
-					err = proto.Unmarshal(data[:], request)
+					log.Println(data[:length])
+					err = proto.Unmarshal(data[:length], request)
 					if err != nil {
-						log.Println(err)
+						log.Printf("Error in Unmarshalling: %v\n", err)
 					}
 					if request.Value != nil {
 						result, value := s.Get(*request.Key)

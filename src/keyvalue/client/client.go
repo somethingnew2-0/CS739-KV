@@ -21,7 +21,7 @@ type Client struct {
 	Host     string
 	Port     uint16
 	Conn     net.Conn
-	ConnLock *sync.Mutex
+	ConnLock sync.Mutex
 	Pending  map[string]chan protobuf.Response
 }
 
@@ -54,7 +54,7 @@ func Init(server string) (int, *Client) {
 		Host:     host,
 		Port:     uint16(port),
 		Conn:     conn,
-		ConnLock: &sync.Mutex{},
+		ConnLock: sync.Mutex{},
 		Pending:  make(map[string]chan protobuf.Response),
 	}
 
@@ -106,17 +106,20 @@ func (c *Client) write(request *protobuf.Request) chan protobuf.Response {
 	}
 
 	length := len(data)
+	log.Println(length)
 	lengthBytes := make([]byte, 4)
 	binary.LittleEndian.PutUint32(lengthBytes, uint32(length))
 
 	// Guarantee squential write of length then protobuf on stream
 	c.ConnLock.Lock()
 	defer c.ConnLock.Unlock()
+	log.Println(lengthBytes)
 	_, err = c.Conn.Write(lengthBytes)
 	if err != nil {
 		log.Printf("Error writing data: %v\n", err)
 		return nil
 	}
+	log.Println(data)
 	_, err = c.Conn.Write(data)
 	if err != nil {
 		log.Printf("Error writing data: %v\n", err)
