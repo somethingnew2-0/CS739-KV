@@ -32,7 +32,7 @@ func Init(port uint16) (int, *Server) {
 	//Listen to the TCP port
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%u", port))
 	if err != nil {
-		log.Printf("Port %u could not be opened '%v'\n", port, err)
+		log.Printf("Port %u could not be opened: %v\n", port, err)
 		return -1, nil
 	}
 
@@ -110,7 +110,7 @@ func (s *Server) log() {
 			deltaPath := fmt.Sprintf("/tmp/delta-%d", t.UnixNano())
 			f, err := os.Create(deltaPath)
 			if err != nil {
-				log.Printf("Could not create file %s, failed with error '%v'\n", deltaPath, err)
+				log.Printf("Could not create file %s, failed with error: %v\n", deltaPath, err)
 				return
 			}
 			defer f.Close()
@@ -124,15 +124,15 @@ func (s *Server) log() {
 				if bufferIndex > cap(buffer) {
 					data, err := json.Marshal(buffer)
 					if err != nil {
-						log.Printf("Could not marshall delta log, with error '%v'\n", err)
+						log.Printf("Could not marshall delta log, with error: %v\n", err)
 					}
 					w.Write(data)
 					if err != nil {
-						log.Printf("Could not write data failed, with error '%v'\n", err)
+						log.Printf("Could not write data failed, with error: %v\n", err)
 					}
 					w.WriteString("\n")
 					if err != nil {
-						log.Printf("Could not write newline, failed with error '%v'\n", err)
+						log.Printf("Could not write newline, failed with error: %v\n", err)
 					}
 					bufferIndex = 0
 				}
@@ -166,4 +166,8 @@ func (s *Server) Set(key string, value string) (int, string) {
 	s.Write <- Write{Key: key, Value: value}
 
 	return status, oldValue
+}
+
+func (s *Server) Close() {
+	s.Listener.Close()
 }

@@ -3,10 +3,14 @@ package client
 import (
 	"keyvalue/protobuf"
 
-	"fmt"
+	"crypto/sha256"
+	"encoding/binary"
 	"log"
+	"math/rand"
+	"net"
 	"strconv"
 	"strings"
+	"sync"
 
 	"code.google.com/p/goprotobuf/proto"
 )
@@ -14,8 +18,11 @@ import (
 const MaxUInt16 uint = uint(^uint16(0))
 
 type Client struct {
-	Host string
-	Port uint16
+	Host     string
+	Port     uint16
+	Conn     net.Conn
+	ConnLock *sync.Mutex
+	Pending  map[string]chan protobuf.Response
 }
 
 func Init(server string) (int, *Client) {
@@ -28,7 +35,7 @@ func Init(server string) (int, *Client) {
 
 	port, err := strconv.Atoi(split[1])
 	if err != nil {
-		log.Printf("Port given '%s' is not a number\n", split[1])
+		log.Printf("Port given '%s' is not a number: %v\n", split[1], err)
 		return -1, nil
 	}
 
@@ -37,38 +44,122 @@ func Init(server string) (int, *Client) {
 		return -1, nil
 	}
 
-	client := &Client{
-		Host: host,
-		Port: uint16(port),
+	conn, err := net.Dial("tcp", server)
+	if err != nil {
+		log.Printf("Cannot connect to '%s' server: %v\n", server, err)
+		return -1, nil
 	}
+
+	client := &Client{
+		Host:     host,
+		Port:     uint16(port),
+		Conn:     conn,
+		ConnLock: &sync.Mutex{},
+		Pending:  make(map[string]chan protobuf.Response),
+	}
+
+	go client.run()
+
 	return 0, client
 }
 
-func ClientTest() {
-	stub, client, err := kvservice.DialKVService("tcp", "localhost:12345")
+func (c *Client) run() {
+	for {
+		// try to read the data
+		data := make([]byte, 4)
+		_, err := c.Conn.Read(data)
+		if err != nil {
+			log.Printf("Error reading length: %v", err)
+		}
+		length, _ := binary.Varint(data)
+		data = make([]byte, length)
+		_, err = c.Conn.Read(data)
+		if err != nil {
+			log.Printf("Error reading response: %v", err)
+		}
+
+		response := new(protobuf.Response)
+		err = proto.Unmarshal(data, response)
+		if err != nil {
+			log.Fatal("Unmarshaling error: ", err)
+		}
+		callback := c.Pending[response.GetId()]
+		callback <- *response
+		close(callback)
+		delete(c.Pending, response.GetId())
+	}
+}
+
+// No entropy added with hashing here, could just send random int instead
+func randomId() string {
+	random := rand.Uint32()
+	randomBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(randomBytes, random)
+	hash := sha256.Sum256(randomBytes)
+	return string(hash[:])
+}
+
+func (c *Client) write(request *protobuf.Request) chan protobuf.Response {
+	data, err := proto.Marshal(request)
 	if err != nil {
-		log.Fatal(`kvservice.DialKVService("tcp", "localhost:12345"):`, err)
-	}
-	defer client.Close()
-
-	getArg := new(kvservice.GetRequest)
-	setArg := new(kvservice.SetRequest)
-	reply := new(kvservice.Response)
-
-	setArg.Key = proto.String("key1")
-	setArg.Value = proto.String("value1")
-
-	if err = stub.Set(setArg, reply); err != nil {
-		log.Fatal("kvservice error:", err)
+		log.Printf("Marshaling error: %v\n", err)
+		return nil
 	}
 
-	fmt.Printf("Called Set(key=%s, value=%s) Received(result=%d, value=%s)", setArg.GetKey(), setArg.GetValue(), reply.GetResult(), reply.GetValue())
+	length := len(data)
+	lengthBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(lengthBytes, uint32(length))
 
-	getArg.Key = proto.String("key1")
-
-	if err = stub.Get(getArg, reply); err != nil {
-		log.Fatal("kvservice error:", err)
+	// Guarantee squential write of length then protobuf on stream
+	c.ConnLock.Lock()
+	defer c.ConnLock.Unlock()
+	_, err = c.Conn.Write(lengthBytes)
+	if err != nil {
+		log.Printf("Error writing data: %v\n", err)
+		return nil
+	}
+	_, err = c.Conn.Write(data)
+	if err != nil {
+		log.Printf("Error writing data: %v\n", err)
+		return nil
 	}
 
-	fmt.Printf("Called Get(key=%s) Received(result=%d, value=%s)", getArg.GetKey(), reply.GetResult(), reply.GetValue())
+	callback := make(chan protobuf.Response)
+	c.Pending[request.GetId()] = callback
+	return callback
+}
+
+func (c *Client) Get(key string) (int, string) {
+	request := new(protobuf.Request)
+	request.Id = proto.String(randomId())
+	request.Key = proto.String(key)
+
+	callback := c.write(request)
+	if callback == nil {
+		return -1, ""
+	}
+
+	// Block on callback
+	response := <-callback
+	return int(response.GetResult()), response.GetValue()
+}
+
+func (c *Client) Set(key string, value string) (int, string) {
+	request := new(protobuf.Request)
+	request.Id = proto.String(randomId())
+	request.Key = proto.String(key)
+	request.Value = proto.String(value)
+
+	callback := c.write(request)
+	if callback == nil {
+		return -1, ""
+	}
+
+	// Block on callback
+	response := <-callback
+	return int(response.GetResult()), response.GetValue()
+}
+
+func (c *Client) Close() {
+	c.Conn.Close()
 }
