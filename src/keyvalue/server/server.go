@@ -56,12 +56,14 @@ func (s *Server) run() {
 	for {
 		if conn, err := s.Listener.Accept(); err == nil {
 			go func(s *Server, conn net.Conn) {
+				defer conn.Close()
 				log.Println("Connection established")
 				for {
 					data := make([]byte, 4)
 					_, err := conn.Read(data)
 					if err != nil {
 						log.Printf("Error reading length: %v", err)
+						return
 					}
 					length64, _ := binary.Uvarint(data)
 					length := int(length64)
@@ -73,7 +75,7 @@ func (s *Server) run() {
 						i += n
 						if err != nil {
 							log.Printf("Error reading request: %v", err)
-							break
+							return
 						}
 					}
 					//Create an struct pointer of type protobuf.Request and protobuf.Response struct
@@ -82,6 +84,7 @@ func (s *Server) run() {
 					err = proto.Unmarshal(data[:length], request)
 					if err != nil {
 						log.Printf("Error in Unmarshalling: %v\n", err)
+						return
 					}
 					response := new(protobuf.Response)
 					response.Id = request.Id
@@ -98,6 +101,7 @@ func (s *Server) run() {
 					data, err = proto.Marshal(response)
 					if err != nil {
 						log.Printf("Marshaling error: %v\n", err)
+						continue
 					}
 
 					length = len(data)
@@ -106,10 +110,12 @@ func (s *Server) run() {
 					_, err = conn.Write(lengthBytes)
 					if err != nil {
 						log.Printf("Error writing data: %v\n", err)
+						return
 					}
 					_, err = conn.Write(data)
 					if err != nil {
 						log.Printf("Error writing data: %v\n", err)
+						return
 					}
 				}
 			}(s, conn)
