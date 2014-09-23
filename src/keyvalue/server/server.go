@@ -63,7 +63,6 @@ func (s *Server) run() {
 					if err != nil {
 						log.Printf("Error reading length: %v", err)
 					}
-					log.Println(data)
 					length64, _ := binary.Uvarint(data)
 					length := int(length64)
 
@@ -76,19 +75,17 @@ func (s *Server) run() {
 							log.Printf("Error reading request: %v", err)
 							break
 						}
-						log.Printf("Read %d from connection, needed length %d\n", n, length)
 					}
-					log.Println("Decoding Protobuf message")
 					//Create an struct pointer of type protobuf.Request and protobuf.Response struct
 					request := new(protobuf.Request)
-					response := new(protobuf.Response)
 					//Convert all the data retrieved into the ProtobufTest.TestMessage struct type
-					log.Println(data[:length])
 					err = proto.Unmarshal(data[:length], request)
 					if err != nil {
 						log.Printf("Error in Unmarshalling: %v\n", err)
 					}
-					if request.Value != nil {
+					response := new(protobuf.Response)
+					response.Id = request.Id
+					if request.GetValue() == "" {
 						result, value := s.Get(*request.Key)
 						response.Result = proto.Int32(int32(result))
 						response.Value = proto.String(value)
@@ -96,6 +93,23 @@ func (s *Server) run() {
 						result, value := s.Set(*request.Key, *request.Value)
 						response.Result = proto.Int32(int32(result))
 						response.Value = proto.String(value)
+					}
+
+					data, err = proto.Marshal(response)
+					if err != nil {
+						log.Printf("Marshaling error: %v\n", err)
+					}
+
+					length = len(data)
+					lengthBytes := make([]byte, 4)
+					binary.LittleEndian.PutUint32(lengthBytes, uint32(length))
+					_, err = conn.Write(lengthBytes)
+					if err != nil {
+						log.Printf("Error writing data: %v\n", err)
+					}
+					_, err = conn.Write(data)
+					if err != nil {
+						log.Printf("Error writing data: %v\n", err)
 					}
 				}
 			}(s, conn)

@@ -70,11 +70,17 @@ func (c *Client) run() {
 		if err != nil {
 			log.Printf("Error reading length: %v", err)
 		}
-		length, _ := binary.Varint(data)
+		length64, _ := binary.Uvarint(data)
+		length := int(length64)
 		data = make([]byte, length)
-		_, err = c.Conn.Read(data)
-		if err != nil {
-			log.Printf("Error reading response: %v", err)
+		for i := 0; i < length; {
+			//Read the data waiting on the connection and put it in the data buffer
+			n, err := c.Conn.Read(data[i : length-i])
+			i += n
+			if err != nil {
+				log.Printf("Error reading request: %v", err)
+				break
+			}
 		}
 
 		response := new(protobuf.Response)
@@ -106,20 +112,17 @@ func (c *Client) write(request *protobuf.Request) chan protobuf.Response {
 	}
 
 	length := len(data)
-	log.Println(length)
 	lengthBytes := make([]byte, 4)
 	binary.LittleEndian.PutUint32(lengthBytes, uint32(length))
 
 	// Guarantee squential write of length then protobuf on stream
 	c.ConnLock.Lock()
 	defer c.ConnLock.Unlock()
-	log.Println(lengthBytes)
 	_, err = c.Conn.Write(lengthBytes)
 	if err != nil {
 		log.Printf("Error writing data: %v\n", err)
 		return nil
 	}
-	log.Println(data)
 	_, err = c.Conn.Write(data)
 	if err != nil {
 		log.Printf("Error writing data: %v\n", err)
