@@ -26,8 +26,8 @@ type Server struct {
 	Port           uint16
 	listener       net.Listener
 	store          map[string]string
-	storeLock      sync.Mutex // Since maps aren't thread safe, must lock on writes
-	pending        chan set   // Pending sets are sent to channel to be added
+	storeLock      sync.RWMutex // Maps aren't thread safe, must lock on writes using a readers-writer lock
+	pending        chan set     // Pending sets are sent to channel to be added
 	pendingPersist *channels.InfiniteChannel
 }
 
@@ -43,7 +43,7 @@ func Init(port uint16) (int, *Server) {
 		Port:           port,
 		listener:       listener,
 		store:          make(map[string]string),
-		storeLock:      sync.Mutex{},
+		storeLock:      sync.RWMutex{},
 		pending:        make(chan set, 64),
 		pendingPersist: channels.NewInfiniteChannel(),
 	}
@@ -130,7 +130,9 @@ func (s *Server) run() {
 
 func (s *Server) set() {
 	for set := range s.pending {
+		s.storeLock.Lock()
 		s.store[set.Key] = set.Value
+		s.storeLock.Unlock()
 		s.pendingPersist.In() <- set
 	}
 }
@@ -186,7 +188,9 @@ func (s *Server) Get(key string) (int, string) {
 		return -1, ""
 	}
 
+	s.storeLock.RLock()
 	value, present := s.store[key]
+	s.storeLock.RUnlock()
 	if present {
 		return 0, value
 	}
