@@ -165,7 +165,7 @@ func (s *Server) run() {
 		if conn, err := s.listener.Accept(); err == nil {
 			go func(s *Server, conn net.Conn) {
 				defer conn.Close()
-				log.Println("Connection established")
+				log.Println("Connection established with client")
 				for {
 					data := make([]byte, 4)
 					_, err := conn.Read(data)

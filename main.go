@@ -62,7 +62,10 @@ func init() {
 		} else {
 			log.Fatalln("Need to specify port for server to open")
 		}
+	}
 
+	if opts.Client {
+		close(operations)
 	}
 
 	// Set runtime GOMAXPROCS
@@ -87,6 +90,8 @@ func main() {
 			}
 		}
 	}
+
+	defer service.Close()
 
 	for oper := range operations {
 		if oper.value == "" {
