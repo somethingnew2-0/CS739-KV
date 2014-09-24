@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	// "net/http"
 	"os"
 	"sync"
 	"time"
@@ -52,6 +53,14 @@ func Init(port uint16) (int, *Server) {
 	go server.run()
 	go server.set()
 	go server.persist()
+
+	// go func() {
+	// 	http.handlefunc("/", func(w http.responsewriter, r *http.request) {
+	// 		fmt.fprintf(w, "%v", server.store)
+	// 	})
+
+	// 	log.fatal(http.listenandserve(":8080", nil))
+	// }()
 
 	return 0, server
 }
@@ -140,8 +149,8 @@ func (s *Server) set() {
 }
 
 func (s *Server) persist() {
-	ticker := time.NewTicker(time.Millisecond * 1000)
-	for t := range ticker.C {
+	deltaTicker := time.NewTicker(time.Second)
+	for t := range deltaTicker.C {
 		func(s *Server) {
 			length := len(s.pendingPersist)
 			if length == 0 {
