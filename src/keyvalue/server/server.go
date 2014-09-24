@@ -12,7 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-	// "net/http"
+	"net/http"
 	"os"
 	"path"
 	"sort"
@@ -69,13 +69,13 @@ func Init(port uint16) (int, *Server) {
 	go server.persistDelta()
 	go server.persistBase()
 
-	// go func() {
-	// 	http.handlefunc("/", func(w http.responsewriter, r *http.request) {
-	// 		fmt.fprintf(w, "%v", server.store)
-	// 	})
+	go func() {
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "%v", server.store)
+		})
 
-	// 	log.fatal(http.listenandserve(":8080", nil))
-	// }()
+		log.Fatal(http.ListenAndServe(":8080", nil))
+	}()
 
 	log.Println("Server accepting requests")
 	return 0, server
@@ -170,14 +170,14 @@ func (s *Server) run() {
 				defer conn.Close()
 				log.Println("Connection established with client")
 				for {
+
 					data := make([]byte, 4)
 					_, err := conn.Read(data)
 					if err != nil {
 						log.Printf("Error reading length: %v", err)
 						return
 					}
-					length64, _ := binary.Uvarint(data)
-					length := int(length64)
+					length := int(binary.BigEndian.Uint32(data))
 
 					data = make([]byte, length)
 					for i := 0; i < length; {
@@ -199,7 +199,7 @@ func (s *Server) run() {
 					}
 					response := new(protobuf.Response)
 					response.Id = request.Id
-					if request.GetValue() == "" {
+					if request.GetType() == "get" {
 						result, value := s.Get(request.GetKey())
 						response.Result = proto.Int32(int32(result))
 						response.Value = proto.String(value)
@@ -217,7 +217,7 @@ func (s *Server) run() {
 
 					length = len(data)
 					lengthBytes := make([]byte, 4)
-					binary.LittleEndian.PutUint32(lengthBytes, uint32(length))
+					binary.BigEndian.PutUint32(lengthBytes, uint32(length))
 					_, err = conn.Write(lengthBytes)
 					if err != nil {
 						log.Printf("Error writing data: %v\n", err)

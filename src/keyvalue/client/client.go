@@ -3,7 +3,7 @@ package client
 import (
 	"keyvalue/protobuf"
 
-	"crypto/sha256"
+	//"crypto/sha256"
 	"encoding/binary"
 	"log"
 	"math/rand"
@@ -70,8 +70,7 @@ func (c *Client) run() {
 		if err != nil {
 			log.Printf("Error reading length: %v", err)
 		}
-		length64, _ := binary.Uvarint(data)
-		length := int(length64)
+		length := int(binary.BigEndian.Uint32(data))
 		data = make([]byte, length)
 		for i := 0; i < length; {
 			//Read the data waiting on the connection and put it in the data buffer
@@ -97,11 +96,11 @@ func (c *Client) run() {
 
 // No entropy added with hashing here, could just send random int instead
 func randomId() string {
-	random := rand.Uint32()
-	randomBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(randomBytes, random)
-	hash := sha256.Sum256(randomBytes)
-	return string(hash[:])
+	random := rand.Int()
+	//randomBytes := make([]byte, 4)
+	//binary.BigEndian.PutUint32(randomBytes, random)
+	//hash := sha256.Sum256(randomBytes)
+	return string(strconv.Itoa(random))
 }
 
 func (c *Client) write(request *protobuf.Request) chan protobuf.Response {
@@ -113,7 +112,7 @@ func (c *Client) write(request *protobuf.Request) chan protobuf.Response {
 
 	length := len(data)
 	lengthBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(lengthBytes, uint32(length))
+	binary.BigEndian.PutUint32(lengthBytes, uint32(length))
 
 	// Guarantee squential write of length then protobuf on stream
 	c.connLock.Lock()
@@ -137,6 +136,7 @@ func (c *Client) write(request *protobuf.Request) chan protobuf.Response {
 func (c *Client) Get(key string) (int, string) {
 	request := new(protobuf.Request)
 	request.Id = proto.String(randomId())
+	request.Type = proto.String("get")
 	request.Key = proto.String(key)
 
 	callback := c.write(request)
@@ -152,6 +152,7 @@ func (c *Client) Get(key string) (int, string) {
 func (c *Client) Set(key string, value string) (int, string) {
 	request := new(protobuf.Request)
 	request.Id = proto.String(randomId())
+	request.Type = proto.String("set")
 	request.Key = proto.String(key)
 	request.Value = proto.String(value)
 
