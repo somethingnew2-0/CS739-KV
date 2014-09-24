@@ -9,12 +9,21 @@ The service to provide is a simple key-value store, where keys and values are st
 
 ## Run
 
+### Server
+
 The main executable can be run as either the server or the client.  
 
 To execute as the server only the port number is needed as an argument.
 ```
 go run main.go 12345
 ```
+
+To reset the persistence state, so that the server is reset and booted.  Can also be done manually with `rm -r log/`
+```
+go run main.go -r 12345
+```
+
+### Client
 
 To execute as the client and interact with the server the -c or --client flag is needed along with the server address.
 ```
