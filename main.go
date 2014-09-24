@@ -1,6 +1,7 @@
 package main
 
 import (
+	"keyvalue"
 	"keyvalue/client"
 	"keyvalue/server"
 
@@ -12,12 +13,6 @@ import (
 	"strconv"
 	"strings"
 )
-
-type service interface {
-	Get(key string) (int, string)
-	Set(key string, value string) (int, string)
-	Close()
-}
 
 type operation struct {
 	key   string
@@ -68,7 +63,7 @@ func init() {
 	if opts.Client {
 		close(operations)
 	} else if opts.Reset {
-		log.Fatalln("Resetting persistent log")
+		log.Println("Resetting persistent log")
 		os.RemoveAll(server.LogDir)
 	}
 
@@ -77,7 +72,7 @@ func init() {
 }
 
 func main() {
-	var service service
+	var service keyvalue.Service
 	if opts.Client {
 		_, service = client.Init(args[0])
 	} else {
