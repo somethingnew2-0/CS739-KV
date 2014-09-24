@@ -20,9 +20,9 @@ const MaxUInt16 uint = uint(^uint16(0))
 type Client struct {
 	Host     string
 	Port     uint16
-	Conn     net.Conn
-	ConnLock sync.Mutex
-	Pending  map[string]chan protobuf.Response
+	conn     net.Conn
+	connLock sync.Mutex // Don't let multiple go routines write to the connection at once
+	pending  map[string]chan protobuf.Response
 }
 
 func Init(server string) (int, *Client) {
@@ -53,9 +53,9 @@ func Init(server string) (int, *Client) {
 	client := &Client{
 		Host:     host,
 		Port:     uint16(port),
-		Conn:     conn,
-		ConnLock: sync.Mutex{},
-		Pending:  make(map[string]chan protobuf.Response),
+		conn:     conn,
+		connLock: sync.Mutex{},
+		pending:  make(map[string]chan protobuf.Response),
 	}
 
 	go client.run()
@@ -66,7 +66,7 @@ func Init(server string) (int, *Client) {
 func (c *Client) run() {
 	for {
 		data := make([]byte, 4)
-		_, err := c.Conn.Read(data)
+		_, err := c.conn.Read(data)
 		if err != nil {
 			log.Printf("Error reading length: %v", err)
 		}
@@ -75,7 +75,7 @@ func (c *Client) run() {
 		data = make([]byte, length)
 		for i := 0; i < length; {
 			//Read the data waiting on the connection and put it in the data buffer
-			n, err := c.Conn.Read(data[i : length-i])
+			n, err := c.conn.Read(data[i : length-i])
 			i += n
 			if err != nil {
 				log.Printf("Error reading request: %v", err)
@@ -88,10 +88,10 @@ func (c *Client) run() {
 		if err != nil {
 			log.Fatal("Unmarshaling error: ", err)
 		}
-		callback := c.Pending[response.GetId()]
+		callback := c.pending[response.GetId()]
 		callback <- *response
 		close(callback)
-		delete(c.Pending, response.GetId())
+		delete(c.pending, response.GetId())
 	}
 }
 
@@ -116,21 +116,21 @@ func (c *Client) write(request *protobuf.Request) chan protobuf.Response {
 	binary.LittleEndian.PutUint32(lengthBytes, uint32(length))
 
 	// Guarantee squential write of length then protobuf on stream
-	c.ConnLock.Lock()
-	defer c.ConnLock.Unlock()
-	_, err = c.Conn.Write(lengthBytes)
+	c.connLock.Lock()
+	defer c.connLock.Unlock()
+	_, err = c.conn.Write(lengthBytes)
 	if err != nil {
 		log.Printf("Error writing data: %v\n", err)
 		return nil
 	}
-	_, err = c.Conn.Write(data)
+	_, err = c.conn.Write(data)
 	if err != nil {
 		log.Printf("Error writing data: %v\n", err)
 		return nil
 	}
 
 	callback := make(chan protobuf.Response)
-	c.Pending[request.GetId()] = callback
+	c.pending[request.GetId()] = callback
 	return callback
 }
 
@@ -166,5 +166,5 @@ func (c *Client) Set(key string, value string) (int, string) {
 }
 
 func (c *Client) Close() {
-	c.Conn.Close()
+	c.conn.Close()
 }

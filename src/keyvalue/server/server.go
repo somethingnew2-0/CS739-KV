@@ -13,20 +13,22 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync"
 	"time"
 )
 
-type Write struct {
+type set struct {
 	Key   string
 	Value string
 }
 
 type Server struct {
-	Port     uint16
-	Store    map[string]string
-	Listener net.Listener
-	Write    chan Write
-	Log      *channels.InfiniteChannel
+	Port           uint16
+	listener       net.Listener
+	store          map[string]string
+	storeLock      sync.Mutex // Since maps aren't thread safe, must lock on writes
+	pending        chan set   // Pending sets are sent to channel to be added
+	pendingPersist *channels.InfiniteChannel
 }
 
 func Init(port uint16) (int, *Server) {
@@ -38,23 +40,24 @@ func Init(port uint16) (int, *Server) {
 	}
 
 	server := &Server{
-		Port:     port,
-		Store:    make(map[string]string),
-		Listener: listener,
-		Write:    make(chan Write, 64),
-		Log:      channels.NewInfiniteChannel(),
+		Port:           port,
+		listener:       listener,
+		store:          make(map[string]string),
+		storeLock:      sync.Mutex{},
+		pending:        make(chan set, 64),
+		pendingPersist: channels.NewInfiniteChannel(),
 	}
 
 	go server.run()
-	go server.write()
-	go server.log()
+	go server.set()
+	go server.persist()
 
 	return 0, server
 }
 
 func (s *Server) run() {
 	for {
-		if conn, err := s.Listener.Accept(); err == nil {
+		if conn, err := s.listener.Accept(); err == nil {
 			go func(s *Server, conn net.Conn) {
 				defer conn.Close()
 				log.Println("Connection established")
@@ -125,19 +128,19 @@ func (s *Server) run() {
 	}
 }
 
-func (s *Server) write() {
-	for write := range s.Write {
-		s.Store[write.Key] = write.Value
-		s.Log.In() <- write
+func (s *Server) set() {
+	for set := range s.pending {
+		s.store[set.Key] = set.Value
+		s.pendingPersist.In() <- set
 	}
 }
 
-func (s *Server) log() {
+func (s *Server) persist() {
 	ticker := time.NewTicker(time.Millisecond * 1000)
-	buffer := make([]Write, 1024)
+	buffer := make([]set, 1024)
 	for t := range ticker.C {
 		func(s *Server) {
-			length := s.Log.Len()
+			length := s.pendingPersist.Len()
 			if length == 0 {
 				return
 			}
@@ -155,7 +158,7 @@ func (s *Server) log() {
 
 			bufferIndex := 0
 			for i := 0; i < length; i++ {
-				buffer[bufferIndex] = (<-s.Log.Out()).(Write)
+				buffer[bufferIndex] = (<-s.pendingPersist.Out()).(set)
 				if bufferIndex > cap(buffer) {
 					data, err := json.Marshal(buffer)
 					if err != nil {
@@ -178,12 +181,12 @@ func (s *Server) log() {
 }
 
 func (s *Server) Get(key string) (int, string) {
-	if s.Store == nil {
+	if s.store == nil {
 		log.Printf("Server Store is not initialized\n")
 		return -1, ""
 	}
 
-	value, present := s.Store[key]
+	value, present := s.store[key]
 	if present {
 		return 0, value
 	}
@@ -193,16 +196,11 @@ func (s *Server) Get(key string) (int, string) {
 func (s *Server) Set(key string, value string) (int, string) {
 	status, oldValue := s.Get(key)
 
-	if s.Write == nil {
-		log.Printf("Server Write channel is not initialized\n")
-		return -1, ""
-	}
-
-	s.Write <- Write{Key: key, Value: value}
+	s.pending <- set{Key: key, Value: value}
 
 	return status, oldValue
 }
 
 func (s *Server) Close() {
-	s.Listener.Close()
+	s.listener.Close()
 }

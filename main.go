@@ -5,7 +5,13 @@ import (
 	"keyvalue/server"
 
 	"log"
+	"runtime"
 )
+
+func init() {
+	// Set runtime GOMAXPROCS
+	runtime.GOMAXPROCS(runtime.NumCPU())
+}
 
 func main() {
 	server.Init(12345)
