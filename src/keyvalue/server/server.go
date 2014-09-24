@@ -9,11 +9,14 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	// "net/http"
 	"os"
 	"path"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -215,7 +218,27 @@ func (s *Server) persistBase() {
 			if err != nil {
 				log.Printf("Could not write data failed, with error: %v\n", err)
 			}
+			go deleteOldPersistence(t.UnixNano())
 		}(s)
+	}
+}
+
+func deleteOldPersistence(epoch int64) {
+	entries, err := ioutil.ReadDir(LogDir)
+	if err != nil {
+		log.Printf("Error reading log directory: %v", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.LastIndex(name, "-base") >= 0 || strings.LastIndex(name, "-delta") >= 0 {
+			split := strings.Split(name, "-")
+			if len(split) == 2 {
+				touch, err := strconv.ParseInt(split[0], 10, 64)
+				if err == nil && touch < epoch {
+					os.Remove(path.Join(LogDir, name))
+				}
+			}
+		}
 	}
 }
 
