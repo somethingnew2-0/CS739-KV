@@ -81,13 +81,6 @@ func Init(port uint16) (int, *Server) {
 	return 0, server
 }
 
-// Used to sort file epochs
-type int64arr []int64
-
-func (a int64arr) Len() int           { return len(a) }
-func (a int64arr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a int64arr) Less(i, j int) bool { return a[i] < a[j] }
-
 func (s *Server) recover() {
 	entries, err := ioutil.ReadDir(LogDir)
 	if err != nil {
@@ -95,11 +88,19 @@ func (s *Server) recover() {
 		return
 	}
 
+	names := make([]string, len(entries))
+	for index, entry := range entries {
+		names[index] = entry.Name()
+	}
+	sort.Strings(names)
+
 	s.storeLock.Lock()
 	defer s.storeLock.Unlock()
+
+	// Find the most recent back backup
 	var baseEpoch int64
-	for _, entry := range entries {
-		name := entry.Name()
+	for i := len(names) - 1; i >= 0; i-- {
+		name := names[i]
 		if strings.LastIndex(name, "-base") >= 0 {
 			split := strings.Split(name, "-")
 			if len(split) == 2 {
@@ -120,41 +121,40 @@ func (s *Server) recover() {
 				log.Printf("Error unmarshalling base log, unable to recover: %v", err)
 				return
 			}
+
+			// Truncate the list of names so we don't have to iterate
+			// through all of them for delta recovery
+			if len(names) >= i+1 {
+				names = names[i+1:]
+			}
+
+			break
 		}
 	}
 
-	epochs := make([]int64, len(entries))
-	for index, entry := range entries {
-		name := entry.Name()
+	for _, name := range names {
 		if strings.LastIndex(name, "-delta") >= 0 {
 			split := strings.Split(name, "-")
 			if len(split) == 2 {
 				epoch, err := strconv.ParseInt(split[0], 10, 64)
 				if err == nil && epoch > baseEpoch {
-					epochs[index] = epoch
+					data, err := ioutil.ReadFile(path.Join(LogDir, fmt.Sprintf("%d-delta", epoch)))
+					if err != nil {
+						log.Printf("Error reading delta log, recovery could be paritally incorrect: %v", err)
+						continue
+					}
+
+					var sets []set
+					err = json.Unmarshal(data, &sets)
+					if err != nil {
+						log.Printf("Error reading delta log, recovery could be paritally incorrect: %v", err)
+						continue
+					}
+
+					for _, set := range sets {
+						s.store[set.Key] = set.Value
+					}
 				}
-			}
-		}
-	}
-	sort.Sort(int64arr(epochs))
-
-	for _, epoch := range epochs {
-		if epoch > 0 {
-			data, err := ioutil.ReadFile(path.Join(LogDir, fmt.Sprintf("%d-delta", epoch)))
-			if err != nil {
-				log.Printf("Error reading delta log, recovery could be paritally incorrect: %v", err)
-				continue
-			}
-
-			var sets []set
-			err = json.Unmarshal(data, &sets)
-			if err != nil {
-				log.Printf("Error reading delta log, recovery could be paritally incorrect: %v", err)
-				continue
-			}
-
-			for _, set := range sets {
-				s.store[set.Key] = set.Value
 			}
 		}
 	}
