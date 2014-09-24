@@ -5,8 +5,9 @@ option cc_generic_services = true;
 
 message Request {
   required string id = 1;
-  required string key = 2;
-  optional string value = 3;
+  required string type = 2;
+  required string key = 3;
+  optional string value = 4;
 }
 
 message Response {

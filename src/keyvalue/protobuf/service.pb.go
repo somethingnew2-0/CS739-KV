@@ -23,8 +23,9 @@ var _ = math.Inf
 
 type Request struct {
 	Id               *string `protobuf:"bytes,1,req,name=id" json:"id,omitempty"`
-	Key              *string `protobuf:"bytes,2,req,name=key" json:"key,omitempty"`
-	Value            *string `protobuf:"bytes,3,opt,name=value" json:"value,omitempty"`
+	Type             *string `protobuf:"bytes,2,req,name=type" json:"type,omitempty"`
+	Key              *string `protobuf:"bytes,3,req,name=key" json:"key,omitempty"`
+	Value            *string `protobuf:"bytes,4,opt,name=value" json:"value,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -35,6 +36,13 @@ func (*Request) ProtoMessage()    {}
 func (m *Request) GetId() string {
 	if m != nil && m.Id != nil {
 		return *m.Id
+	}
+	return ""
+}
+
+func (m *Request) GetType() string {
+	if m != nil && m.Type != nil {
+		return *m.Type
 	}
 	return ""
 }
