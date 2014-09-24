@@ -32,6 +32,7 @@ var (
 
 		// Boolean for whether this should act as a server or client
 		Client bool `short:"c" long:"client" description:"Acts as a client when specified"`
+		Reset  bool `short:"r" long:"reset" description:"Reset persistent log for server  (eg. rm -r log/)"`
 	}
 	args       []string
 	operations = make(chan operation, len(os.Args))
@@ -66,6 +67,9 @@ func init() {
 
 	if opts.Client {
 		close(operations)
+	} else if opts.Reset {
+		log.Fatalln("Resetting persistent log")
+		os.RemoveAll(server.LogDir)
 	}
 
 	// Set runtime GOMAXPROCS
