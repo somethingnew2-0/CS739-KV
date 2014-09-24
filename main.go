@@ -89,14 +89,12 @@ func main() {
 	}
 
 	for oper := range operations {
-		go func(oper operation) {
-			if oper.value == "" {
-				result, value := service.Get(oper.key)
-				log.Printf("Called Get(key=%s) Received(result=%d, value=%s)\n", oper.key, result, value)
-			} else {
-				result, old := service.Set(oper.key, oper.value)
-				log.Printf("Called Set(key=%s, value=%s) Received(result=%d, value=%s)\n", oper.key, oper.value, result, old)
-			}
-		}(oper)
+		if oper.value == "" {
+			result, value := service.Get(oper.key)
+			log.Printf("Called Get(key=%s) Received(result=%d, value=%s)\n", oper.key, result, value)
+		} else {
+			result, old := service.Set(oper.key, oper.value)
+			log.Printf("Called Set(key=%s, value=%s) Received(result=%d, value=%s)\n", oper.key, oper.value, result, old)
+		}
 	}
 }
