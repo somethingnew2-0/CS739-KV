@@ -4,7 +4,6 @@ import (
 	"keyvalue/protobuf"
 
 	"code.google.com/p/goprotobuf/proto"
-	"github.com/eapache/channels"
 
 	"bufio"
 	"encoding/binary"
@@ -17,6 +16,8 @@ import (
 	"time"
 )
 
+const MaxSetsPerSec uint = 1024
+
 type set struct {
 	Key   string
 	Value string
@@ -26,9 +27,9 @@ type Server struct {
 	Port           uint16
 	listener       net.Listener
 	store          map[string]string
-	storeLock      sync.RWMutex // Maps aren't thread safe, must lock on writes using a readers-writer lock
-	pending        chan set     // Pending sets are sent to channel to be added
-	pendingPersist *channels.InfiniteChannel
+	storeLock      *sync.RWMutex // Maps aren't thread safe, must lock on writes using a readers-writer lock
+	pending        chan *set     // Pending sets are sent to channel to be added
+	pendingPersist chan *set
 }
 
 func Init(port uint16) (int, *Server) {
@@ -43,9 +44,9 @@ func Init(port uint16) (int, *Server) {
 		Port:           port,
 		listener:       listener,
 		store:          make(map[string]string),
-		storeLock:      sync.RWMutex{},
-		pending:        make(chan set, 64),
-		pendingPersist: channels.NewInfiniteChannel(),
+		storeLock:      &sync.RWMutex{},
+		pending:        make(chan *set, 64),
+		pendingPersist: make(chan *set, MaxSetsPerSec),
 	}
 
 	go server.run()
@@ -133,18 +134,23 @@ func (s *Server) set() {
 		s.storeLock.Lock()
 		s.store[set.Key] = set.Value
 		s.storeLock.Unlock()
-		s.pendingPersist.In() <- set
+
+		s.pendingPersist <- set
 	}
 }
 
 func (s *Server) persist() {
 	ticker := time.NewTicker(time.Millisecond * 1000)
-	buffer := make([]set, 1024)
 	for t := range ticker.C {
 		func(s *Server) {
-			length := s.pendingPersist.Len()
+			length := len(s.pendingPersist)
 			if length == 0 {
 				return
+			}
+
+			buffer := make([]*set, length)
+			for i := 0; i < length; i++ {
+				buffer[i] = <-s.pendingPersist
 			}
 
 			deltaPath := fmt.Sprintf("/tmp/delta-%d", t.UnixNano())
@@ -158,25 +164,13 @@ func (s *Server) persist() {
 			w := bufio.NewWriter(f)
 			defer w.Flush()
 
-			bufferIndex := 0
-			for i := 0; i < length; i++ {
-				buffer[bufferIndex] = (<-s.pendingPersist.Out()).(set)
-				if bufferIndex > cap(buffer) {
-					data, err := json.Marshal(buffer)
-					if err != nil {
-						log.Printf("Could not marshall delta log, with error: %v\n", err)
-					}
-					w.Write(data)
-					if err != nil {
-						log.Printf("Could not write data failed, with error: %v\n", err)
-					}
-					w.WriteString("\n")
-					if err != nil {
-						log.Printf("Could not write newline, failed with error: %v\n", err)
-					}
-					bufferIndex = 0
-				}
-				bufferIndex++
+			data, err := json.Marshal(buffer)
+			if err != nil {
+				log.Printf("Could not marshall delta log, with error: %v\n", err)
+			}
+			w.Write(data)
+			if err != nil {
+				log.Printf("Could not write data failed, with error: %v\n", err)
 			}
 		}(s)
 	}
@@ -200,7 +194,7 @@ func (s *Server) Get(key string) (int, string) {
 func (s *Server) Set(key string, value string) (int, string) {
 	status, oldValue := s.Get(key)
 
-	s.pending <- set{Key: key, Value: value}
+	s.pending <- &set{Key: key, Value: value}
 
 	return status, oldValue
 }
