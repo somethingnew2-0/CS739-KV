@@ -40,6 +40,8 @@ type Server struct {
 }
 
 func Init(port uint16) (int, *Server) {
+	log.Println("Server starting")
+
 	//Listen to the TCP port
 	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
 	if err != nil {
@@ -59,6 +61,8 @@ func Init(port uint16) (int, *Server) {
 	os.MkdirAll(LogDir, 0777)
 
 	server.recover()
+	log.Println("Server fully recovered")
+
 	go server.run()
 	go server.set()
 
@@ -73,6 +77,7 @@ func Init(port uint16) (int, *Server) {
 	// 	log.fatal(http.listenandserve(":8080", nil))
 	// }()
 
+	log.Println("Server accepting requests")
 	return 0, server
 }
 
@@ -135,7 +140,6 @@ func (s *Server) recover() {
 
 	for _, epoch := range epochs {
 		if epoch > 0 {
-			log.Println(epoch)
 			data, err := ioutil.ReadFile(path.Join(LogDir, fmt.Sprintf("%d-delta", epoch)))
 			if err != nil {
 				log.Printf("Error reading delta log, recovery could be paritally incorrect: %v", err)
