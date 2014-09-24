@@ -4,18 +4,26 @@ import (
 	"keyvalue/protobuf"
 
 	"code.google.com/p/goprotobuf/proto"
-	"github.com/eapache/channels"
 
 	"bufio"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
+	// "net/http"
 	"os"
+	"path"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
+
+const LogDir string = "log/"
+const MaxSetsPerSec uint = 1024
 
 type set struct {
 	Key   string
@@ -26,12 +34,14 @@ type Server struct {
 	Port           uint16
 	listener       net.Listener
 	store          map[string]string
-	storeLock      sync.RWMutex // Maps aren't thread safe, must lock on writes using a readers-writer lock
-	pending        chan set     // Pending sets are sent to channel to be added
-	pendingPersist *channels.InfiniteChannel
+	storeLock      *sync.RWMutex // Maps aren't thread safe, must lock on writes using a readers-writer lock
+	pending        chan *set     // Pending sets are sent to channel to be added
+	pendingPersist chan *set
 }
 
 func Init(port uint16) (int, *Server) {
+	log.Println("Server starting")
+
 	//Listen to the TCP port
 	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
 	if err != nil {
@@ -43,16 +53,111 @@ func Init(port uint16) (int, *Server) {
 		Port:           port,
 		listener:       listener,
 		store:          make(map[string]string),
-		storeLock:      sync.RWMutex{},
-		pending:        make(chan set, 64),
-		pendingPersist: channels.NewInfiniteChannel(),
+		storeLock:      &sync.RWMutex{},
+		pending:        make(chan *set, 64),
+		pendingPersist: make(chan *set, MaxSetsPerSec),
 	}
+
+	os.MkdirAll(LogDir, 0777)
+
+	server.recover()
+	log.Println("Server fully recovered")
 
 	go server.run()
 	go server.set()
-	go server.persist()
 
+	go server.persistDelta()
+	go server.persistBase()
+
+	// go func() {
+	// 	http.handlefunc("/", func(w http.responsewriter, r *http.request) {
+	// 		fmt.fprintf(w, "%v", server.store)
+	// 	})
+
+	// 	log.fatal(http.listenandserve(":8080", nil))
+	// }()
+
+	log.Println("Server accepting requests")
 	return 0, server
+}
+
+// Used to sort file epochs
+type int64arr []int64
+
+func (a int64arr) Len() int           { return len(a) }
+func (a int64arr) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a int64arr) Less(i, j int) bool { return a[i] < a[j] }
+
+func (s *Server) recover() {
+	entries, err := ioutil.ReadDir(LogDir)
+	if err != nil {
+		log.Printf("Error reading log directory, unable to recover: %v", err)
+		return
+	}
+
+	s.storeLock.Lock()
+	defer s.storeLock.Unlock()
+	var baseEpoch int64
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.LastIndex(name, "-base") >= 0 {
+			split := strings.Split(name, "-")
+			if len(split) == 2 {
+				epoch, err := strconv.ParseInt(split[0], 10, 64)
+				if err == nil {
+					baseEpoch = epoch
+				}
+			}
+
+			data, err := ioutil.ReadFile(path.Join(LogDir, name))
+			if err != nil {
+				log.Printf("Error reading base log, unable to recover: %v", err)
+				return
+			}
+
+			err = json.Unmarshal(data, &s.store)
+			if err != nil {
+				log.Printf("Error unmarshalling base log, unable to recover: %v", err)
+				return
+			}
+		}
+	}
+
+	epochs := make([]int64, len(entries))
+	for index, entry := range entries {
+		name := entry.Name()
+		if strings.LastIndex(name, "-delta") >= 0 {
+			split := strings.Split(name, "-")
+			if len(split) == 2 {
+				epoch, err := strconv.ParseInt(split[0], 10, 64)
+				if err == nil && epoch > baseEpoch {
+					epochs[index] = epoch
+				}
+			}
+		}
+	}
+	sort.Sort(int64arr(epochs))
+
+	for _, epoch := range epochs {
+		if epoch > 0 {
+			data, err := ioutil.ReadFile(path.Join(LogDir, fmt.Sprintf("%d-delta", epoch)))
+			if err != nil {
+				log.Printf("Error reading delta log, recovery could be paritally incorrect: %v", err)
+				continue
+			}
+
+			var sets []set
+			err = json.Unmarshal(data, &sets)
+			if err != nil {
+				log.Printf("Error reading delta log, recovery could be paritally incorrect: %v", err)
+				continue
+			}
+
+			for _, set := range sets {
+				s.store[set.Key] = set.Value
+			}
+		}
+	}
 }
 
 func (s *Server) run() {
@@ -133,21 +238,26 @@ func (s *Server) set() {
 		s.storeLock.Lock()
 		s.store[set.Key] = set.Value
 		s.storeLock.Unlock()
-		s.pendingPersist.In() <- set
+
+		s.pendingPersist <- set
 	}
 }
 
-func (s *Server) persist() {
-	ticker := time.NewTicker(time.Millisecond * 1000)
-	buffer := make([]set, 1024)
+func (s *Server) persistDelta() {
+	ticker := time.NewTicker(time.Second)
 	for t := range ticker.C {
 		func(s *Server) {
-			length := s.pendingPersist.Len()
+			length := len(s.pendingPersist)
 			if length == 0 {
 				return
 			}
 
-			deltaPath := fmt.Sprintf("/tmp/delta-%d", t.UnixNano())
+			buffer := make([]*set, length)
+			for i := 0; i < length; i++ {
+				buffer[i] = <-s.pendingPersist
+			}
+
+			deltaPath := path.Join(LogDir, fmt.Sprintf("%d-delta", t.UnixNano()))
 			f, err := os.Create(deltaPath)
 			if err != nil {
 				log.Printf("Could not create file %s, failed with error: %v\n", deltaPath, err)
@@ -158,27 +268,64 @@ func (s *Server) persist() {
 			w := bufio.NewWriter(f)
 			defer w.Flush()
 
-			bufferIndex := 0
-			for i := 0; i < length; i++ {
-				buffer[bufferIndex] = (<-s.pendingPersist.Out()).(set)
-				if bufferIndex > cap(buffer) {
-					data, err := json.Marshal(buffer)
-					if err != nil {
-						log.Printf("Could not marshall delta log, with error: %v\n", err)
-					}
-					w.Write(data)
-					if err != nil {
-						log.Printf("Could not write data failed, with error: %v\n", err)
-					}
-					w.WriteString("\n")
-					if err != nil {
-						log.Printf("Could not write newline, failed with error: %v\n", err)
-					}
-					bufferIndex = 0
-				}
-				bufferIndex++
+			data, err := json.Marshal(buffer)
+			if err != nil {
+				log.Printf("Could not marshall delta log, with error: %v\n", err)
+			}
+			w.Write(data)
+			if err != nil {
+				log.Printf("Could not write data failed, with error: %v\n", err)
 			}
 		}(s)
+	}
+}
+
+func (s *Server) persistBase() {
+	ticker := time.NewTicker(time.Minute)
+	for t := range ticker.C {
+		func(s *Server) {
+			basePath := path.Join(LogDir, fmt.Sprintf("%d-base", t.UnixNano()))
+			f, err := os.Create(basePath)
+			if err != nil {
+				log.Printf("Could not create file %s, failed with error: %v\n", basePath, err)
+				return
+			}
+			defer f.Close()
+
+			w := bufio.NewWriter(f)
+			defer w.Flush()
+
+			s.storeLock.RLock()
+			data, err := json.Marshal(s.store)
+			s.storeLock.RUnlock()
+			if err != nil {
+				log.Printf("Could not marshall delta log, with error: %v\n", err)
+			}
+			w.Write(data)
+			if err != nil {
+				log.Printf("Could not write data failed, with error: %v\n", err)
+			}
+			go deleteOldPersistence(t.UnixNano())
+		}(s)
+	}
+}
+
+func deleteOldPersistence(epoch int64) {
+	entries, err := ioutil.ReadDir(LogDir)
+	if err != nil {
+		log.Printf("Error reading log directory: %v", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.LastIndex(name, "-base") >= 0 || strings.LastIndex(name, "-delta") >= 0 {
+			split := strings.Split(name, "-")
+			if len(split) == 2 {
+				touch, err := strconv.ParseInt(split[0], 10, 64)
+				if err == nil && touch < epoch {
+					os.Remove(path.Join(LogDir, name))
+				}
+			}
+		}
 	}
 }
 
@@ -200,7 +347,7 @@ func (s *Server) Get(key string) (int, string) {
 func (s *Server) Set(key string, value string) (int, string) {
 	status, oldValue := s.Get(key)
 
-	s.pending <- set{Key: key, Value: value}
+	s.pending <- &set{Key: key, Value: value}
 
 	return status, oldValue
 }

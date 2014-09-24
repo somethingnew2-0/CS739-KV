@@ -1,5 +1,1 @@
-1. Flags for host and port config
-2. Client wrapper and tests
-3. Recovery code for logger
---- later ---
-4. RPC/proto buf interface for the client
+1. Recovery code for logger

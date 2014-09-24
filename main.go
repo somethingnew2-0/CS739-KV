@@ -4,146 +4,97 @@ import (
 	"keyvalue/client"
 	"keyvalue/server"
 
+	"github.com/jessevdk/go-flags"
+
 	"log"
+	"os"
 	"runtime"
 	"strconv"
-	"time"
+	"strings"
+)
+
+type service interface {
+	Get(key string) (int, string)
+	Set(key string, value string) (int, string)
+	Close()
+}
+
+type operation struct {
+	key   string
+	value string
+}
+
+var (
+	opts struct {
+		// Callbacks called each time the option is found.
+		Get func(string) `short:"g" long:"get" description:"Get a key from the server"`
+		Set func(string) `short:"s" long:"set" description:"Set a key on the server (key=value)"`
+
+		// Boolean for whether this should act as a server or client
+		Client bool `short:"c" long:"client" description:"Acts as a client when specified"`
+	}
+	args       []string
+	operations = make(chan operation, len(os.Args))
 )
 
 func init() {
+	opts.Get = func(key string) {
+		operations <- operation{key: key}
+	}
+
+	opts.Set = func(keyvalue string) {
+		split := strings.Split(keyvalue, "=")
+		if len(split) < 2 {
+			log.Fatalf("Set operation '-s %s' must be in the form '-s key=value'\n", keyvalue)
+		}
+		operations <- operation{key: split[0], value: strings.Join(split[1:], "=")}
+	}
+
+	var err error
+	args, err = flags.Parse(&opts)
+	if err != nil {
+		log.Fatalf("Error parsing options: &v\n", err)
+	}
+
+	if len(args) < 1 {
+		if opts.Client {
+			log.Fatalln("Need to specify address for client to connect")
+		} else {
+			log.Fatalln("Need to specify port for server to open")
+		}
+
+	}
+
 	// Set runtime GOMAXPROCS
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
 func main() {
-	server.Init(12345)
-	c := clientInit("localhost:12345")
-	sanityTest(c)
-	correctnessTest(c)
-	performanceTest(c)
-
-}
-
-func clientInit(server string) *client.Client {
-	status, client := client.Init(server)
-
-	if status != 0 {
-		log.Fatal("Client inited with nonzero status")
-	}
-	if client == nil {
-		log.Fatal("Client inited returned nil value")
-	}
-
-	log.Printf("Successfully connected to Server at, %s", server)
-	return client
-}
-
-func sanityTest(client *client.Client) {
-	printTestStart("Sanity Test")
-
-	result, old := client.Set("key1", "value1")
-
-	log.Printf("Called Set(key=%s, value=%s) Received(result=%d, value=%s)\n", "key1", "value1", result, old)
-
-	result, value := client.Get("key1")
-
-	log.Printf("Called Get(key=%s) Received(result=%d, value=%s)\n", "key1", result, value)
-}
-
-func correctnessTest(client *client.Client) {
-	printTestStart("Correctness Test")
-
-	var value string = "This is a sample test value of type string"
-	var result int
-	var out string
-
-	// Test Case 1: Write a new key
-	result, out = client.Set("New_key_1", value)
-	if result != 1 {
-		log.Fatal("TC 1: Server did not return status 1 for writing a new key. Received : ", result)
-	}
-	if out != "" {
-		log.Fatal("TC 1: Server returned old value for writing a new key. Received value : ", out)
-	}
-
-	// Test Case 2: Overwrite an existing key
-	var new_value string = "A different sample string value"
-	result, out = client.Set("New_key_1", new_value)
-	if result != 0 {
-		log.Fatal("TC 2: Server did not return status 0 for writing to an existing key. Received : ", result)
-	}
-	if out != value {
-		log.Fatalf("TC 2: Server did not return the expected old value for writing to an existing key. Expecting: %s, Received: %s ", value, out)
-	}
-
-	// Test Case 3: Read an existing key
-	result, out = client.Get("New_key_1")
-	if result != 0 {
-		log.Fatal("TC 3: Server did not return status 0 for reading an existing key. Received : ", result)
-	}
-	if out != new_value {
-		log.Fatalf("TC 3: Server did not return the expected value for reading an existing key. Expecting: %s, Received: %s ", new_value, out)
-	}
-
-	// Test Case 4: Read a non-existent key
-	result, out = client.Get("Madeup_key")
-	if result != 1 {
-		log.Fatal("TC 4: Server did not return status 1 for reading a non-existent key. Received : ", result)
-	}
-	if out != "" {
-		log.Fatalf("TC 4: Server returned a value for a non-existent key. Received: %s", out)
-	}
-
-	log.Printf("PASS")
-
-}
-
-func performanceTest(client *client.Client) {
-	printTestStart("Performance Test")
-
-	var value string = "This is a sample test value of type string"
-	var elapsed time.Duration
-	var startTime time.Time
-
-	startTime = time.Now()
-	seqWrite(client, 1000, value)
-	elapsed = time.Since(startTime)
-	log.Printf("Write test - Keys: %d, Total time: %s", 1000, elapsed)
-
-	startTime = time.Now()
-	seqRead(client, 1000, value)
-	elapsed = time.Since(startTime)
-	log.Printf("SeqRead test - Keys: %d, Total time: %s", 1000, elapsed)
-
-	log.Printf("PASS")
-}
-
-func seqWrite(client *client.Client, numKeys int, value string) {
-	for i := 1; i < numKeys; i++ {
-		key := strconv.Itoa(i)
-		result, _ := client.Set(key, value)
-
-		if result == -1 {
-			log.Fatalf("Write failure. Failed to write key: %s", key)
+	var service service
+	if opts.Client {
+		_, service = client.Init(args[0])
+	} else {
+		port, err := strconv.Atoi(args[0])
+		if err == nil {
+			_, service = server.Init(uint16(port))
+		} else {
+			split := strings.Split(args[0], ":")
+			port, err := strconv.Atoi(split[len(split)-1])
+			if err == nil {
+				_, service = server.Init(uint16(port))
+			} else {
+				log.Fatalf("Could not parse port from '%s': %v", args[0], err)
+			}
 		}
 	}
-}
 
-func seqRead(client *client.Client, numKeys int, value string) {
-	for i := 1; i < numKeys; i++ {
-		key := strconv.Itoa(i)
-		result, out := client.Get(key)
-
-		if result == -1 {
-			log.Fatalf("Read failure. Failed to read key: %s", key)
-		}
-
-		if out != value {
-			log.Fatalf("Inconsistent data on read. Result: %d, Expecting: %s, Received: %s", result, value, out)
+	for oper := range operations {
+		if oper.value == "" {
+			result, value := service.Get(oper.key)
+			log.Printf("Called Get(key=%s) Received(result=%d, value=%s)\n", oper.key, result, value)
+		} else {
+			result, old := service.Set(oper.key, oper.value)
+			log.Printf("Called Set(key=%s, value=%s) Received(result=%d, value=%s)\n", oper.key, oper.value, result, old)
 		}
 	}
-}
-
-func printTestStart(testName string) {
-	log.Printf("----------------- %s ------------------", testName)
 }
