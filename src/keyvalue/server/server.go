@@ -43,7 +43,7 @@ func Init(port uint16) (int, *Server) {
 	log.Println("Server starting")
 
 	//Listen to the TCP port
-	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		log.Printf("Port %u could not be opened: %v\n", port, err)
 		return -1, nil
