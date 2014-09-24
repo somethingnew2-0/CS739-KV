@@ -13,10 +13,12 @@ import (
 	"net"
 	// "net/http"
 	"os"
+	"path"
 	"sync"
 	"time"
 )
 
+const LogDir string = "log/"
 const MaxSetsPerSec uint = 1024
 
 type set struct {
@@ -52,7 +54,10 @@ func Init(port uint16) (int, *Server) {
 
 	go server.run()
 	go server.set()
-	go server.persist()
+
+	os.Mkdir(LogDir, 0777)
+	go server.persistDelta()
+	go server.persistBase()
 
 	// go func() {
 	// 	http.handlefunc("/", func(w http.responsewriter, r *http.request) {
@@ -148,9 +153,9 @@ func (s *Server) set() {
 	}
 }
 
-func (s *Server) persist() {
-	deltaTicker := time.NewTicker(time.Second)
-	for t := range deltaTicker.C {
+func (s *Server) persistDelta() {
+	ticker := time.NewTicker(time.Second)
+	for t := range ticker.C {
 		func(s *Server) {
 			length := len(s.pendingPersist)
 			if length == 0 {
@@ -162,7 +167,7 @@ func (s *Server) persist() {
 				buffer[i] = <-s.pendingPersist
 			}
 
-			deltaPath := fmt.Sprintf("/tmp/delta-%d", t.UnixNano())
+			deltaPath := path.Join(LogDir, fmt.Sprintf("%d-delta", t.UnixNano()))
 			f, err := os.Create(deltaPath)
 			if err != nil {
 				log.Printf("Could not create file %s, failed with error: %v\n", deltaPath, err)
@@ -174,6 +179,35 @@ func (s *Server) persist() {
 			defer w.Flush()
 
 			data, err := json.Marshal(buffer)
+			if err != nil {
+				log.Printf("Could not marshall delta log, with error: %v\n", err)
+			}
+			w.Write(data)
+			if err != nil {
+				log.Printf("Could not write data failed, with error: %v\n", err)
+			}
+		}(s)
+	}
+}
+
+func (s *Server) persistBase() {
+	ticker := time.NewTicker(time.Minute)
+	for t := range ticker.C {
+		func(s *Server) {
+			basePath := path.Join(LogDir, fmt.Sprintf("%d-base", t.UnixNano()))
+			f, err := os.Create(basePath)
+			if err != nil {
+				log.Printf("Could not create file %s, failed with error: %v\n", basePath, err)
+				return
+			}
+			defer f.Close()
+
+			w := bufio.NewWriter(f)
+			defer w.Flush()
+
+			s.storeLock.RLock()
+			data, err := json.Marshal(s.store)
+			s.storeLock.RUnlock()
 			if err != nil {
 				log.Printf("Could not marshall delta log, with error: %v\n", err)
 			}
