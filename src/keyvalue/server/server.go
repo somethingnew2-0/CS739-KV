@@ -124,8 +124,11 @@ func (s *Server) recover() {
 
 			// Truncate the list of names so we don't have to iterate
 			// through all of them for delta recovery
-			if len(names) >= i+1 {
+			if len(names) > i+1 {
 				names = names[i+1:]
+			} else {
+				// No further delta updates in the list
+				return
 			}
 
 			break
