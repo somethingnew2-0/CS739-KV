@@ -12,7 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-	"net/http"
+	//"net/http"
 	"os"
 	"path"
 	"sort"
@@ -69,13 +69,13 @@ func Init(port uint16) (int, *Server) {
 	go server.persistDelta()
 	go server.persistBase()
 
-	go func() {
+	/*go func() {
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "%v", server.store)
 		})
 
 		log.Fatal(http.ListenAndServe(":8080", nil))
-	}()
+	}()*/
 
 	log.Println("Server accepting requests")
 	return 0, server
