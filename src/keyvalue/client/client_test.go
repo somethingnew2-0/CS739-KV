@@ -2,14 +2,16 @@ package client
 
 import (
 	"keyvalue/server"
-	"log"
-	"testing"
 
+	"log"
+	"os"
 	"strconv"
+	"testing"
 	"time"
 )
 
 func TestClient(t *testing.T) {
+	os.RemoveAll(server.LogDir)
 	server.Init(12345)
 	c := clientInit("localhost:12345")
 	//c := clientInit("adelie-01:12345")
@@ -91,19 +93,18 @@ func correctnessTest(client *Client) {
 func performanceTest(client *Client) {
 	printTestStart("Performance Test")
 
-	var value string = "This is a sample test value of type string"
-	var elapsed time.Duration
-	var startTime time.Time
+	value := "This is a sample test value of type string"
+	operations := 1000
+
+	startTime := time.Now()
+	seqWrite(client, operations, value)
+	elapsed := time.Since(startTime)
+	log.Printf("Write test - Keys: %d, Total time: %s, %f ops/sec", operations, elapsed, float64(operations)/elapsed.Seconds())
 
 	startTime = time.Now()
-	seqWrite(client, 1000, value)
+	seqRead(client, operations, value)
 	elapsed = time.Since(startTime)
-	log.Printf("Write test - Keys: %d, Total time: %s, %f ops/sec", 1000, elapsed, 1000/elapsed.Seconds())
-
-	startTime = time.Now()
-	seqRead(client, 1000, value)
-	elapsed = time.Since(startTime)
-	log.Printf("SeqRead test - Keys: %d, Total time: %s, %f ops/sec", 1000, elapsed, 1000/elapsed.Seconds())
+	log.Printf("SeqRead test - Keys: %d, Total time: %s, %f ops/sec", operations, elapsed, float64(operations)/elapsed.Seconds())
 
 	log.Printf("PASS")
 }
