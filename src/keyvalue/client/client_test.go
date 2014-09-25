@@ -94,7 +94,7 @@ func performanceTest(client *Client) {
 	printTestStart("Performance Test")
 
 	value := "This is a sample test value of type string"
-	operations := 1000
+	operations := 10000
 
 	startTime := time.Now()
 	seqWrite(client, operations, value)

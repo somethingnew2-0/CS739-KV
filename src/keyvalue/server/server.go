@@ -23,7 +23,7 @@ import (
 )
 
 const LogDir string = "log/"
-const MaxSetsPerSec uint = 1024
+const MaxSetsPerSec uint = 1 << 15
 
 type set struct {
 	Key   string
@@ -41,7 +41,6 @@ type Server struct {
 
 func Init(port uint16) (int, *Server) {
 	log.Println("Server starting")
-
 	//Listen to the TCP port
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
@@ -54,7 +53,7 @@ func Init(port uint16) (int, *Server) {
 		listener:       listener,
 		store:          make(map[string]string),
 		storeLock:      &sync.RWMutex{},
-		pending:        make(chan *set, 64),
+		pending:        make(chan *set, MaxSetsPerSec),
 		pendingPersist: make(chan *set, MaxSetsPerSec),
 	}
 
