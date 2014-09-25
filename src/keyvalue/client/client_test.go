@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"math/rand"
 )
 
 func TestClient(t *testing.T) {
@@ -97,33 +99,57 @@ func performanceTest(client *Client) {
 	operations := 10000
 
 	startTime := time.Now()
-	seqWrite(client, operations, value)
+	totalLatency := seqWrite(client, operations, value)
 	elapsed := time.Since(startTime)
-	log.Printf("Write test - Keys: %d, Total time: %s, %f ops/sec", operations, elapsed, float64(operations)/elapsed.Seconds())
+	log.Printf("Write test - Keys: %d, Total time: %s, %f ops/sec, Avg. Latency %f secs", operations, elapsed, float64(operations)/elapsed.Seconds(), totalLatency/float64(operations))
 
 	startTime = time.Now()
-	seqRead(client, operations, value)
+	totalLatency = seqRead(client, operations, value)
 	elapsed = time.Since(startTime)
-	log.Printf("SeqRead test - Keys: %d, Total time: %s, %f ops/sec", operations, elapsed, float64(operations)/elapsed.Seconds())
+	log.Printf("SeqRead test - Keys: %d, Total time: %s, %f ops/sec, Avg. Latency %f secs", operations, elapsed, float64(operations)/elapsed.Seconds(), totalLatency/float64(operations))
+
+	startTime = time.Now()
+	totalLatency = randRead(client, operations, value)
+	elapsed = time.Since(startTime)
+	log.Printf("RandRead test - Keys: %d, Total time: %s, %f ops/sec, Avg. Latency %f secs", operations, elapsed, float64(operations)/elapsed.Seconds(), totalLatency/float64(operations))
 
 	log.Printf("PASS")
 }
 
-func seqWrite(client *Client, numKeys int, value string) {
+func seqWrite(client *Client, numKeys int, value string) float64 {
+	totalLatency := 0.0
+	var start time.Time
+	var elapsed time.Duration
+
 	for i := 1; i < numKeys; i++ {
 		key := strconv.Itoa(i)
+		start = time.Now()
 		result, _ := client.Set(key, value)
+		elapsed = time.Since(start)
+		totalLatency += elapsed.Seconds()
 
 		if result == -1 {
 			log.Fatalf("Write failure. Failed to write key: %s", key)
 		}
 	}
+
+	return totalLatency
 }
 
-func seqRead(client *Client, numKeys int, value string) {
+func seqRead(client *Client, numKeys int, value string) float64 {
+	totalLatency := 0.0
+	var start time.Time
+	var elapsed time.Duration
+
 	for i := 1; i < numKeys; i++ {
-		key := strconv.Itoa(i)
+		var n int
+		for n = rand.Intn(numKeys); n == 0; n = rand.Intn(numKeys) {
+		}
+		key := strconv.Itoa(n)
+		start = time.Now()
 		result, out := client.Get(key)
+		elapsed = time.Since(start)
+		totalLatency += elapsed.Seconds()
 
 		if result == -1 {
 			log.Fatalf("Read failure. Failed to read key: %s", key)
@@ -133,6 +159,32 @@ func seqRead(client *Client, numKeys int, value string) {
 			log.Fatalf("Inconsistent data on read. Result: %d, Expecting: %s, Received: %s", result, value, out)
 		}
 	}
+
+	return totalLatency
+}
+
+func randRead(client *Client, numKeys int, value string) float64 {
+	totalLatency := 0.0
+	var start time.Time
+	var elapsed time.Duration
+
+	for i := 1; i < numKeys; i++ {
+		key := strconv.Itoa(i)
+		start = time.Now()
+		result, out := client.Get(key)
+		elapsed = time.Since(start)
+		totalLatency += elapsed.Seconds()
+
+		if result == -1 {
+			log.Fatalf("Read failure. Failed to read key: %s", key)
+		}
+
+		if out != value {
+			log.Fatalf("Inconsistent data on read. Result: %d, Expecting: %s, Received: %s", result, value, out)
+		}
+	}
+
+	return totalLatency
 }
 
 func printTestStart(testName string) {
