@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"bytes"
 	"math/rand"
 )
 
@@ -19,7 +20,11 @@ func TestClient(t *testing.T) {
 	//c := clientInit("adelie-01:12345")
 	sanityTest(c)
 	correctnessTest(c)
-	performanceTest(c)
+	performanceTest(c, 100)
+	performanceTest(c, 200)
+	performanceTest(c, 500)
+	performanceTest(c, 1000)
+	performanceTest(c, 5000)
 }
 
 func clientInit(server string) *Client {
@@ -92,32 +97,43 @@ func correctnessTest(client *Client) {
 
 }
 
-func performanceTest(client *Client) {
+func performanceTest(client *Client, valueSize int64) {
 	printTestStart("Performance Test")
 
-	value := "This is a sample test value of type string"
+	var buffer bytes.Buffer
+	var i int64
+
+	for i = 0; i < valueSize; i++ {
+		buffer.WriteString("a")
+	}
+
+	value := buffer.String()
+	log.Printf("Value Size: %d bytes", valueSize)
 	operations := 10000
 
 	startTime := time.Now()
-	totalLatency := seqWrite(client, operations, value)
+	total, min, max := seqWrite(client, operations, value)
 	elapsed := time.Since(startTime)
-	log.Printf("Write test - Keys: %d, Total time: %s, %f ops/sec, Avg. Latency %f secs", operations, elapsed, float64(operations)/elapsed.Seconds(), totalLatency/float64(operations))
+	log.Printf("Write test - Keys: %d, Total time: %s, %f ops/sec, Latency: Avg %f, Min %f, Max %f s", operations, elapsed, float64(operations)/elapsed.Seconds(), total/float64(operations), min, max)
 
 	startTime = time.Now()
-	totalLatency = seqRead(client, operations, value)
+	total, min, max = seqRead(client, operations, value)
 	elapsed = time.Since(startTime)
-	log.Printf("SeqRead test - Keys: %d, Total time: %s, %f ops/sec, Avg. Latency %f secs", operations, elapsed, float64(operations)/elapsed.Seconds(), totalLatency/float64(operations))
+	log.Printf("SeqRead test - Keys: %d, Total time: %s, %f ops/sec, Latency: Avg %f, Min %f, Max %f s", operations, elapsed, float64(operations)/elapsed.Seconds(), total/float64(operations), min, max)
 
 	startTime = time.Now()
-	totalLatency = randRead(client, operations, value)
+	total, min, max = randRead(client, operations, value)
 	elapsed = time.Since(startTime)
-	log.Printf("RandRead test - Keys: %d, Total time: %s, %f ops/sec, Avg. Latency %f secs", operations, elapsed, float64(operations)/elapsed.Seconds(), totalLatency/float64(operations))
+	log.Printf("RandRead test - Keys: %d, Total time: %s, %f ops/sec, Latency: Avg %f, Min %f, Max %f s", operations, elapsed, float64(operations)/elapsed.Seconds(), total/float64(operations), min, max)
 
 	log.Printf("PASS")
 }
 
-func seqWrite(client *Client, numKeys int, value string) float64 {
+func seqWrite(client *Client, numKeys int, value string) (float64, float64, float64) {
+	var latency float64
 	totalLatency := 0.0
+	maxLatency := 0.0
+	minLatency := 0.0
 	var start time.Time
 	var elapsed time.Duration
 
@@ -126,18 +142,30 @@ func seqWrite(client *Client, numKeys int, value string) float64 {
 		start = time.Now()
 		result, _ := client.Set(key, value)
 		elapsed = time.Since(start)
-		totalLatency += elapsed.Seconds()
+		latency = elapsed.Seconds()
+		if latency > maxLatency {
+			maxLatency = latency
+		}
+		if minLatency == 0.0 {
+			minLatency = latency
+		} else if latency < minLatency {
+			minLatency = latency
+		}
+		totalLatency += latency
 
 		if result == -1 {
 			log.Fatalf("Write failure. Failed to write key: %s", key)
 		}
 	}
 
-	return totalLatency
+	return totalLatency, minLatency, maxLatency
 }
 
-func seqRead(client *Client, numKeys int, value string) float64 {
+func seqRead(client *Client, numKeys int, value string) (float64, float64, float64) {
+	var latency float64
 	totalLatency := 0.0
+	maxLatency := 0.0
+	minLatency := 0.0
 	var start time.Time
 	var elapsed time.Duration
 
@@ -149,7 +177,16 @@ func seqRead(client *Client, numKeys int, value string) float64 {
 		start = time.Now()
 		result, out := client.Get(key)
 		elapsed = time.Since(start)
-		totalLatency += elapsed.Seconds()
+		latency = elapsed.Seconds()
+		if latency > maxLatency {
+			maxLatency = latency
+		}
+		if minLatency == 0.0 {
+			minLatency = latency
+		} else if latency < minLatency {
+			minLatency = latency
+		}
+		totalLatency += latency
 
 		if result == -1 {
 			log.Fatalf("Read failure. Failed to read key: %s", key)
@@ -160,11 +197,14 @@ func seqRead(client *Client, numKeys int, value string) float64 {
 		}
 	}
 
-	return totalLatency
+	return totalLatency, minLatency, maxLatency
 }
 
-func randRead(client *Client, numKeys int, value string) float64 {
+func randRead(client *Client, numKeys int, value string) (float64, float64, float64) {
+	var latency float64
 	totalLatency := 0.0
+	maxLatency := 0.0
+	minLatency := 0.0
 	var start time.Time
 	var elapsed time.Duration
 
@@ -173,7 +213,16 @@ func randRead(client *Client, numKeys int, value string) float64 {
 		start = time.Now()
 		result, out := client.Get(key)
 		elapsed = time.Since(start)
-		totalLatency += elapsed.Seconds()
+		latency = elapsed.Seconds()
+		if latency > maxLatency {
+			maxLatency = latency
+		}
+		if minLatency == 0.0 {
+			minLatency = latency
+		} else if latency < minLatency {
+			minLatency = latency
+		}
+		totalLatency += latency
 
 		if result == -1 {
 			log.Fatalf("Read failure. Failed to read key: %s", key)
@@ -184,7 +233,7 @@ func randRead(client *Client, numKeys int, value string) float64 {
 		}
 	}
 
-	return totalLatency
+	return totalLatency, minLatency, maxLatency
 }
 
 func printTestStart(testName string) {
